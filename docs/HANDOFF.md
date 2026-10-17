@@ -1,4 +1,20 @@
-# Bàn giao bản 0.3
+# Bàn giao bản 0.4
+
+Tiếp tục source 0.3 tại cuối tài liệu. Bản hiện tại giữ Three.js/Vinext/Cloudflare/D1 và các điều khiển gốc.
+
+- `lib/game.ts`: vùng quét dùng `inSweep`/`clearPath`, bảo toàn lượng rác khi hốt/đổ/bàn giao/rời phòng; ba khu và thời gian nghỉ 75 giây; ping hữu hạn. Túi 18, xe 36, tối đa 8 người.
+- `app/api/game/route.ts`: format **4**, `round` phải khớp khi input; trả snapshot đã lưu khi ca đổi. Không đổi migration D1, session token/sequence/CAS vẫn giữ. Phòng format 3 trả 409 kèm thông báo tạo phòng mới.
+- `app/game-client.tsx`: hướng dẫn chuyến đầu, tiến độ khu, phản hồi hành động, ping, latency/lỗi polling/FPS; timeout 6 giây, backoff tới 1,5 giây. Lobby/kết quả chỉ poll để theo kịp ca mới. Snapshot của phiên/mã phòng cũ không cập nhật UI hiện tại. Solo chia bước tối đa 50 ms, tối đa 350 ms/khung để giữ hành vi khi FPS giảm.
+- `lib/scene3d.ts`: tám mặt tiền chủ đạo, dụng cụ và tải xẻng, tên/ping trong 3D; nội suy camera/xe/đồng đội/lá là phần hiển thị, không tự sinh rác. Chế độ thấp tắt bóng và giảm mật độ pixel như trước.
+- Ngắt input >3 giây nhả xe ở request kế tiếp; hết hiện diện 25 giây trả túi thành đống và chuyển host khi cần. Không có tác vụ nền chạy khi cả phòng không gửi request.
+- Script setup dùng cache project, vẫn pnpm 11.25.0/frozen lockfile. `npm test` chạy trực tiếp entry `node:test` để hiện đầy đủ bài và exit status trong cloud; loại `work/` khỏi TypeScript để scratch không đi vào kiểm tra source.
+- Tài liệu bằng chứng hiện tại: `VALIDATION.md`; tài nguyên: `ASSETS.md`; browser scripts tùy chọn: `tests/browser/` (cần Playwright/Chromium có sẵn).
+
+Chưa triển khai production hoặc đổi quyền demo. Chưa có playtest con người/tám thiết bị, số FPS GPU thật hay độ trễ Internet. Browser cloud dùng SwiftShader; đọc điều kiện đo trước khi suy luận hiệu năng.
+
+---
+
+# Lịch sử: bàn giao bản 0.3
 
 ## Nguồn và phạm vi
 

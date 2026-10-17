@@ -1,8 +1,19 @@
 # Hà Nội · Ca đêm — Codex web handoff
 
-Mã nguồn đầy đủ bản **0.3**, game 3D góc nhìn thứ nhất dọn phố Hà Nội, được xuất từ commit `23c89fcaf37bc662eb572d97b4b06493110b82ea` của Site hiện tại. Bản chuyển này bổ sung cấu hình chạy và tài liệu; chưa triển khai tính năng 0.4.
+Source hiện tại là **0.4**, tiếp tục game 3D góc nhìn thứ nhất dọn phố Hà Nội từ bản 0.3 (source gốc `23c89fcaf37bc662eb572d97b4b06493110b82ea`). Chơi solo hoặc phòng 1–8 người qua HTTP/D1.
 
-Demo đang có: https://ha-noi-ca-dem.namxuan05.chatgpt.site
+Demo production hiện có, **chưa được cập nhật trong tác vụ 0.4 này**: https://ha-noi-ca-dem.namxuan05.chatgpt.site
+
+## Có gì trong 0.4
+
+- Chổi gom cả vùng phía trước; lá trượt và nhập đống, kiểm tra tầm tay/vật cản dùng chung client/server.
+- Xẻng hiện tải lá; phản hồi hốt, đổ xe, bàn giao và thông cống bằng hoạt ảnh/âm thanh/HUD. Đổ xe dùng được với cả hai dụng cụ.
+- Ba khu dọn: hốt ít nhất 8 đơn vị và còn tối đa 2 trên đất để hoàn thành; nghỉ sinh lá 75 giây. Solo/đội 1–3 cần 1 khu, đội 4–6 cần 2, đội 7–8 cần 3, cùng mục tiêu bàn giao và cống như trước. Mục tiêu khóa theo đội lúc bắt đầu ca; vào thêm giữa ca không tăng yêu cầu.
+- Tên đồng đội và **G** ping vị trí cần giúp; nhìn gần xe đầy/cống tắc để ping đúng loại. Ping tồn tại 8 giây, hồi 2 giây.
+- Dãy tám mặt tiền chủ đạo với biển hiệu, mái hiên, cửa, ban công và đồ dùng riêng; bảng hướng dẫn trong cảnh và hướng dẫn chuyến bàn giao đầu tiên.
+- Phòng định dạng 4, mã ca ngăn input cũ; giữ sequence và ghi D1 nguyên tử. Mất input 3 giây thì nhả xe khi có request kế tiếp; người rời/hết phiên trả rác trong túi thành đống.
+
+Xem `docs/VALIDATION.md` để phân biệt kết quả tự động, browser và giới hạn chưa kiểm chứng. Dùng phòng mới cho bản 0.4; phòng 0.3 được báo lỗi rõ.
 
 ## Chạy trong môi trường Codex
 
@@ -13,7 +24,7 @@ bash scripts/codex-setup.sh
 npm run dev
 ```
 
-Setup cài dependencies theo lockfile, áp dụng migration D1 cục bộ, chạy test và kiểm tra TypeScript. Dev mặc định ở `http://localhost:5173`. Nếu môi trường cloud cần cổng chuyển tiếp, dùng cơ chế preview được cung cấp trong môi trường đó. Môi trường mới dùng profile portable mặc định; không sao chép `.sites-runtime` từ máy khác.
+Setup giữ cache trong `.sites-runtime`, cài dependencies theo lockfile, áp dụng migration D1 cục bộ, chạy test và kiểm tra TypeScript. Dev mặc định ở `http://localhost:5173`. Nếu môi trường cloud cần cổng chuyển tiếp, dùng cơ chế preview được cung cấp trong môi trường đó. Trong cloud có chuyển tiếp cổng, có thể dùng `npm run dev -- --hostname 0.0.0.0` rồi mở cổng 5173. Môi trường mới dùng profile portable mặc định; không sao chép `.sites-runtime` từ máy khác.
 
 ```bash
 npm test
@@ -35,7 +46,7 @@ Nếu đã có môi trường cho game khác như `cell-rush`, hãy tạo môi t
 
 ## Điều khiển
 
-WASD/chuột: đi/nhìn; C: cúi; 1: chổi; 2: xẻng; giữ E/chuột trái: làm việc; Q: nắm/buông xe; Shift: chạy; F: khẩu trang; M: bản đồ; H: trợ giúp; Esc: nghỉ/thả chuột. Khi không khóa chuột được, dùng chế độ giữ chuột phải để nhìn.
+WASD/chuột: đi/nhìn; C: cúi; 1: chổi; 2: xẻng; giữ E/chuột trái: làm việc; Q: nắm/buông xe; Shift: chạy; F: khẩu trang; M: bản đồ; G: ping gọi giúp; H: trợ giúp; Esc: nghỉ/thả chuột. Khi không khóa chuột được, dùng chế độ giữ chuột phải để nhìn.
 
 Vòng chơi: **quét thành đống → hốt vào túi → đổ xe → đẩy tới điểm tập kết → bàn giao**. Khi mưa, dùng xẻng thông cống để nước rút. Chơi một mình hoặc phòng tối đa tám người; ca 8 phút hoặc thư thả.
 
@@ -43,7 +54,9 @@ Vòng chơi: **quét thành đống → hốt vào túi → đổ xe → đẩy 
 
 - `AGENTS.md`: hướng dẫn cho Codex.
 - `docs/HANDOFF.md`: kiến trúc, dữ liệu và giới hạn đã biết.
-- `docs/ROADMAP-0.4.md`: phạm vi và tiêu chí nghiệm thu bản tiếp theo.
+- `docs/ROADMAP-0.4.md`: phạm vi và tiêu chí nghiệm thu 0.4.
+- `docs/ASSETS.md`: nguồn tài nguyên hình ảnh/âm thanh.
+- `tests/browser/`: playtest tùy chọn với Playwright/Chromium, dùng preview local.
 - `docs/FIRST-TASK-0.4.md`: câu lệnh giao việc sẵn.
 - `README-v03-original.md`: ghi chú của bản gốc trước chuyển giao.
 

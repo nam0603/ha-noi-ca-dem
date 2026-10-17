@@ -3,7 +3,7 @@
 Read `README.md`, `docs/HANDOFF.md`, and `docs/ROADMAP-0.4.md` first.
 
 ## Product
-- Existing 0.3 first-person 3D sanitation worker co-op prototype inspired by Hanoi.
+- Existing 0.4 first-person 3D sanitation worker co-op prototype inspired by Hanoi.
 - Preserve first-person view, broom/scoop, crouching, cart transport, flood/drain work, solo and 1–8-player rooms.
 - Develop the current game; do not replace it with a new template, 2D game, Telegram game, or concept image.
 - UI language: Vietnamese. Desktop keyboard and mouse are the main target; preserve available touch controls.
