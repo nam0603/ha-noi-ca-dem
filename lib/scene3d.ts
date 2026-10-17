@@ -1271,6 +1271,9 @@ export function createFirstPersonScene(
   box(scoop, 0.32, -0.34, -0.59, 0.13, 0.16, 0.15, '#c5bd9d');
   const scoopLoad = new T.InstancedMesh(leafGeo, leafMaterial, 24);
   scoopLoad.instanceMatrix.setUsage(T.DynamicDrawUsage);
+  // The first scoop frame can have zero instances; its cached empty bounds
+  // must not hide the load when the bag fills on a later frame.
+  scoopLoad.frustumCulled = false;
   scoop.add(scoopLoad);
   viewScene.add(scoop);
   const pushHands = new T.Group();

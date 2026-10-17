@@ -40,7 +40,7 @@ Lượt co-op cuối ghi 58 phản hồi HTTP đều 200; latency request p50 60
 
 Điều kiện browser: WebGL phần mềm SwiftShader, low; solo-trip CSS/canvas 640×480 DPR 1; co-op/full-shift CSS 640×480 DPR 0,25 (canvas 160×120) để không nghẽn executor. Lượt ban đầu 1280×720 chỉ khoảng 1 FPS, thời gian giữ phím ngắn không đủ khung; chuyển bài kiểm tra sang chờ theo trạng thái. Full-shift cuối lấy mẫu HUD 7–24 FPS ở canvas 160×120 nói trên; không suy ra hiệu năng ở độ phân giải chơi thật/GPU thật.
 
-Browser phát hiện mã ca solo không tăng khi nhận ca mới; đã sửa để reset nội suy đúng. Bộ điều khiển browser cũng được thêm lùi ra khi lá nằm dưới chân, như thao tác người chơi cần thực hiện để đặt lá phía trước chổi. Không đổi luật quét sau lưng để làm test qua.
+Browser phát hiện mã ca solo không tăng khi nhận ca mới; đã sửa để reset nội suy đúng. Bộ điều khiển browser cũng được thêm lùi ra khi lá nằm dưới chân, như thao tác người chơi cần thực hiện để đặt lá phía trước chổi. Không đổi luật quét sau lưng để làm test qua. Kiểm tra ảnh cuối phát hiện bounds rỗng khiến tải lá trên xẻng bị cull; đã tắt culling cho nhóm instancing động này, xem lại ảnh thấy tải lá và chạy lại chuyến bàn giao/test/TypeScript/build đều qua.
 
 ## Giới hạn
 
