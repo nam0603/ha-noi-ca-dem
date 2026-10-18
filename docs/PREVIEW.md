@@ -22,3 +22,15 @@ Máy chơi chỉ cần Chrome/Edge và kết nối Internet. Preview bắt đầ
 6. Chờ deployment thành công có URL; ghi lại phiên bản/commit và kết quả kiểm tra thực tế. Link cố định phía trên tiếp tục mở bản mới. Nếu phát hành thất bại, giữ bản đang chạy và báo lỗi.
 
 Không thay quyền xem/chơi hoặc triển khai Site production trong quy trình này. Nếu đổi định dạng phòng, người chơi tạo phòng mới sau khi cập nhật. Mở lại trang hoặc dùng Ctrl+Shift+R nếu tab cũ vẫn đang chạy bản trước.
+
+## Lần triển khai đầu tiên — 2026-10-18
+
+- Bản game: 0.4; source GitHub `5babda9c9c7fa525f76d63fe8f129486211db9c4` (gameplay tiếp tục từ `e2169261257f904727bb115707f85ff2fc0fe172`).
+- Source của Site preview: `a5b6e9052dc89968ac4d4987923f3cb08c51aa91`.
+- Saved version: `appgprj_6ad441f7c1108191b3bb10887f2bbebc~appgver_91cd6035b2988191a67ac6ceeb670b1e`.
+- Deployment: `appgdep_6ad442aae59c8191a453e5c47d9ceeae`; Sites trả `succeeded` cùng URL lúc `2026-10-18T03:53:34Z`.
+- Chạy lại trong checkout preview: `npm test` **33/33**, `npm run typecheck` và `npm run build` đều exit 0. Build vẫn cảnh báo chunk >500 kB và phân loại route Vinext như đã ghi trong `VALIDATION.md`.
+- Manifest trong artifact đã được so khớp với manifest source preview; artifact chứa `dist/server/index.js`, client assets và migration D1. Các helper đóng gói của plugin không có trên executor này nên dùng build integration sẵn có và đóng gói tar theo layout mà Sites chấp nhận. Lần upload đầu sai layout bị từ chối trước triển khai; gói đã sửa giữ đường dẫn `dist/server/` và được triển khai thành công.
+- Site preview riêng tư, chỉ chủ Site có quyền ban đầu. Không thêm người xem hoặc đổi audience.
+- Đọc lại Site production xác nhận vẫn version **3**, URL và revision quyền **2** không đổi. Không triển khai production.
+- Chưa chạy lại browser trên URL hosted trong tác vụ cấu hình preview. Kết quả browser local của bản 0.4 nằm trong `VALIDATION.md`; trạng thái deployment thành công không chứng minh FPS/chất lượng chơi hay tám thiết bị ổn định.
