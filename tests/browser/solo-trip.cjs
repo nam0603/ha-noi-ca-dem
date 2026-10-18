@@ -48,10 +48,13 @@ let launchedBrowser;
     window.testState = () => {
       const el = document.querySelector('.fps-app');
       let f = el[Object.keys(el).find((k) => k.startsWith('__reactFiber'))];
-      while (f && f.type?.name !== 'GameClient') f = f.return;
-      for (let h = f?.memoizedState; h; h = h.next)
-        if (h.memoizedState?.current?.format === 4)
-          return h.memoizedState.current;
+      // Production minifies component names; observe the ref shape on ancestors.
+      while (f) {
+        for (let h = f.memoizedState; h; h = h.next)
+          if (h.memoizedState?.current?.format === 4)
+            return h.memoizedState.current;
+        f = f.return;
+      }
       throw Error('no game ref');
     };
   });

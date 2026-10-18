@@ -1,3 +1,9 @@
+# Đợt hình ảnh 0.5
+
+Gameplay và API vẫn ở định dạng 4. `lib/street-materials.ts` tạo bộ bản đồ PBR dùng chung; `public/textures/hanoi-surfaces.webp` là atlas màu mới, nguồn ở `ASSETS.md`. `lib/street-detail.ts` dựng thêm chi tiết mặt tiền và đèn đường. `lib/scene3d.ts` giữ camera/dụng cụ/giao tiếp render cũ, đổi ánh sáng đêm và mô hình hiển thị; cấu hình cao dùng tối đa bốn đèn chiếu gần camera cùng bóng directional, cấu hình thấp bỏ đèn động và bóng, giữ ánh sáng mềm có sẵn. Các light pool là xấp xỉ mỹ thuật, không phải phản xạ hình học thực. Batch có xử lý cả geometry indexed/non-indexed; props cực nhỏ không bo góc nhiều đỉnh. Giữ Site production, cập nhật Site preview riêng theo `PREVIEW.md`.
+
+Xem `VISUAL-PREVIEW-0.5.md` cho bằng chứng kiểm tra và giới hạn.
+
 # Bàn giao bản 0.4
 
 Tiếp tục source 0.3 tại cuối tài liệu. Bản hiện tại giữ Three.js/Vinext/Cloudflare/D1 và các điều khiển gốc.

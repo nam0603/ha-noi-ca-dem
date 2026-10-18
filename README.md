@@ -1,8 +1,10 @@
 # Hà Nội · Ca đêm — Codex web handoff
 
-Source hiện tại là **0.4**, tiếp tục game 3D góc nhìn thứ nhất dọn phố Hà Nội từ bản 0.3 (source gốc `23c89fcaf37bc662eb572d97b4b06493110b82ea`). Chơi solo hoặc phòng 1–8 người qua HTTP/D1.
+Source hiện tại là **0.5 visual preview**, tiếp tục game 3D góc nhìn thứ nhất dọn phố Hà Nội từ bản 0.3 (source gốc `23c89fcaf37bc662eb572d97b4b06493110b82ea`). Chơi solo hoặc phòng 1–8 người qua HTTP/D1.
 
-Demo production hiện có, **chưa được cập nhật trong tác vụ 0.4 này**: https://ha-noi-ca-dem.namxuan05.chatgpt.site
+Đợt hình ảnh hiện tại: **0.5 visual preview**, giữ gameplay/định dạng phòng 0.4. Phố đêm có vật liệu bề mặt riêng, cửa hàng có chiều sâu, chi tiết đô thị, đèn đường, dụng cụ và nhân vật được dựng lại. Xem `docs/VISUAL-PREVIEW-0.5.md` và `docs/ASSETS.md`; đây là bản để đánh giá bằng chơi thử, chưa xác nhận độ hoàn thiện ngang video tham chiếu hay FPS trên GPU thật.
+
+Demo production **0.3 giữ nguyên**: https://ha-noi-ca-dem.namxuan05.chatgpt.site
 
 **Preview chơi thử riêng:** https://ha-noi-ca-dem-preview.namxuan05.chatgpt.site — chỉ cần trình duyệt, đăng nhập tài khoản ChatGPT sở hữu Site khi được yêu cầu. Các bản sửa đã kiểm tra sẽ được cập nhật tại cùng địa chỉ này. Quy trình và phân biệt với production: `docs/PREVIEW.md`.
 

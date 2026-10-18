@@ -450,15 +450,48 @@ test('API rejects invalid origins, IDs, payloads and unknown rooms', async () =>
     400,
   );
 });
+compile('lib/street-materials.ts', 'street-materials.mjs');
+compile('lib/street-detail.ts', 'street-detail.mjs');
 compile('lib/scene3d.ts', 'scene3d.mjs', (s) =>
-  s.replace(/(['"])\.\/game\1/u, "'./game.mjs'"),
+  s.replace(
+    /(['"])\.\/(game|street-materials|street-detail)\1/gu,
+    (_, _quote, name) => `'./${name}.mjs'`,
+  ),
 );
 const { createWorld } = await import(path.join(temp, 'scene3d.mjs'));
 test('3D environment constructs valid geometry, camera street view is unobstructed and ground is present', () => {
-  const { scene } = createWorld();
+  const geometryErrors = [];
+  const originalError = console.error;
+  console.error = (...args) => geometryErrors.push(args.map(String).join(' '));
+  let world;
+  try {
+    world = createWorld();
+  } finally {
+    console.error = originalError;
+  }
+  assert.deepEqual(
+    geometryErrors,
+    [],
+    'static batching must not drop incompatible geometry',
+  );
+  const { scene, lighting, surfaces } = world;
+  assert.equal(
+    lighting.lights.length,
+    4,
+    'bounded nearby high-quality light pool',
+  );
+  assert.equal(lighting.emitters.length, 8);
+  assert(lighting.lights.every((light) => !light.castShadow && !light.visible));
+  assert.equal(surfaces.materials.length, 7);
+  assert.equal(
+    surfaces.textures.length,
+    0,
+    'headless Node construction never loads browser assets',
+  );
   scene.updateMatrixWorld(true);
   let meshes = 0,
-    vertices = 0;
+    vertices = 0,
+    litRoad = false;
   scene.traverse((o) => {
     if (o instanceof THREE.Mesh) {
       meshes++;
@@ -466,10 +499,24 @@ test('3D environment constructs valid geometry, camera street view is unobstruct
       vertices += positions.count;
       for (let i = 0; i < positions.array.length; i++)
         assert(Number.isFinite(positions.array[i]));
+      if (o.material === surfaces.asphalt) {
+        const colors = o.geometry.getAttribute('color');
+        litRoad =
+          surfaces.asphalt.vertexColors &&
+          Array.from(colors.array).some((value) => value > 1.05);
+      }
     }
   });
   assert(meshes > 20 && meshes < 160);
   assert(vertices > 5000);
+  assert(
+    litRoad,
+    'low quality keeps the soft lamp spill without dynamic lights',
+  );
+  assert(
+    vertices < 260000,
+    'small prop bevels must stay within the street geometry budget',
+  );
   const ray = new THREE.Raycaster(
     new THREE.Vector3(19, 1.68, 36.5),
     new THREE.Vector3(1, 0, 0),

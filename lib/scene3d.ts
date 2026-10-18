@@ -1,6 +1,17 @@
 import * as T from 'three';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import {
+  createStreetMaterials,
+  type StreetMaterials,
+} from './street-materials';
+import {
+  clearDetailMaterialCache,
+  detailedScooter,
+  dressFrontage,
+  streetLighting,
+  type StreetLight,
+} from './street-detail';
 import {
   BUILDINGS,
   TREES,
@@ -42,10 +53,24 @@ function box(
   d: number,
   color: string | T.Material,
 ) {
-  const mesh = new T.Mesh(
-    new T.BoxGeometry(w, h, d),
-    typeof color === 'string' ? mat(color) : color,
-  );
+  const geometry = new T.BoxGeometry(w, h, d);
+  const material = typeof color === 'string' ? mat(color) : color;
+  if (material.userData.worldUV) {
+    const positions = geometry.attributes.position,
+      normals = geometry.attributes.normal,
+      uv = geometry.attributes.uv;
+    for (let i = 0; i < positions.count; i++) {
+      const px = positions.getX(i) + x,
+        py = positions.getY(i) + y,
+        pz = positions.getZ(i) + z;
+      uv.setXY(
+        i,
+        Math.abs(normals.getX(i)) > 0.5 ? pz : px,
+        Math.abs(normals.getY(i)) > 0.5 ? pz : py,
+      );
+    }
+  }
+  const mesh = new T.Mesh(geometry, material);
   mesh.position.set(x, y, z);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
@@ -60,12 +85,12 @@ function cylinder(
   rt: number,
   rb: number,
   h: number,
-  color: string,
+  color: string | T.Material,
   segments = 8,
 ) {
   const mesh = new T.Mesh(
     new T.CylinderGeometry(rt, rb, h, segments),
-    mat(color),
+    typeof color === 'string' ? mat(color) : color,
   );
   mesh.position.set(x, y, z);
   mesh.castShadow = true;
@@ -77,7 +102,7 @@ function beam(
   a: T.Vector3,
   b: T.Vector3,
   r: number,
-  color: string,
+  color: string | T.Material,
 ) {
   const m = cylinder(parent, 0, 0, 0, r, r, a.distanceTo(b), color, 8);
   m.position.copy(a).add(b).multiplyScalar(0.5);
@@ -100,86 +125,6 @@ function canvasTexture(
   const tex = new T.CanvasTexture(canvas);
   tex.colorSpace = T.SRGBColorSpace;
   tex.anisotropy = 4;
-  return tex;
-}
-// Deterministic hand-built surface maps: no remote assets or image downloads.
-function surfaceTexture(kind: 'plaster' | 'paving' | 'asphalt' | 'wood') {
-  const tex = canvasTexture(512, 512, (c) => {
-    let seed = 731;
-    const rnd = () => {
-      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-      return seed / 4294967296;
-    };
-    c.fillStyle =
-      kind === 'asphalt' ? '#888b88' : kind === 'wood' ? '#c3a371' : '#ddd9ca';
-    c.fillRect(0, 0, 512, 512);
-    for (let i = 0; i < 18000; i++) {
-      const v = Math.floor(95 + rnd() * 135);
-      c.fillStyle = `rgba(${v},${v},${v},${kind === 'asphalt' ? 0.34 : 0.12})`;
-      const x = rnd() * 512,
-        y = rnd() * 512;
-      c.fillRect(
-        x,
-        y,
-        1 + rnd() * 2,
-        kind === 'wood' ? 20 + rnd() * 55 : 1 + rnd() * 2,
-      );
-    }
-    if (kind === 'plaster') {
-      for (let i = 0; i < 70; i++) {
-        const x = rnd() * 512,
-          y = rnd() * 512,
-          r = 15 + rnd() * 70;
-        const g = c.createRadialGradient(x, y, 0, x, y, r);
-        g.addColorStop(0, '#6c705328');
-        g.addColorStop(1, '#6c705300');
-        c.fillStyle = g;
-        c.fillRect(x - r, y - r, r * 2, r * 2);
-      }
-      for (let i = 0; i < 12; i++) {
-        const x = rnd() * 512;
-        c.strokeStyle = '#797c6833';
-        c.lineWidth = 1;
-        c.beginPath();
-        c.moveTo(x, 0);
-        c.lineTo(x + 15, 60 + rnd() * 180);
-        c.lineTo(x + 10, 200 + rnd() * 150);
-        c.stroke();
-      }
-    }
-    if (kind === 'paving') {
-      c.strokeStyle = '#85877d';
-      c.lineWidth = 5;
-      for (let y = 0; y <= 512; y += 128) {
-        for (let x = -128; x <= 512; x += 128) {
-          const xx = x + (y % 256 ? 64 : 0);
-          c.strokeRect(xx, y, 128, 128);
-          c.strokeStyle = '#ede7d366';
-          c.lineWidth = 2;
-          c.strokeRect(xx + 5, y + 5, 118, 118);
-          c.strokeStyle = '#85877d';
-          c.lineWidth = 5;
-        }
-      }
-    }
-    if (kind === 'asphalt') {
-      c.strokeStyle = '#4e555c66';
-      c.lineWidth = 1;
-      for (let i = 0; i < 6; i++) {
-        c.beginPath();
-        let x = rnd() * 512,
-          y = rnd() * 512;
-        c.moveTo(x, y);
-        for (let j = 0; j < 8; j++) {
-          x += rnd() * 30 - 10;
-          y += rnd() * 20;
-          c.lineTo(x, y);
-        }
-        c.stroke();
-      }
-    }
-  });
-  tex.wrapS = tex.wrapT = T.RepeatWrapping;
   return tex;
 }
 function foliage(root: T.Group) {
@@ -225,7 +170,7 @@ function foliage(root: T.Group) {
         rad = Math.sqrt((j + 0.5) / 90) * 2.05;
       d.position.set(
         tr.x * S + Math.cos(a) * rad,
-        3.5 + Math.sin(j * 13.7) * 0.55 + (1 - rad / 2.05) * 1.1,
+        5.3 + Math.sin(j * 13.7) * 0.8 + (1 - rad / 2.05) * 1.4,
         tr.y * S + Math.sin(a) * rad * 0.85,
       );
       d.rotation.set(Math.sin(j) * 0.7, j * 2.71, Math.cos(j * 4) * 0.6);
@@ -274,13 +219,16 @@ function sign(
       map: texture,
       roughness: 0.9,
       side: T.DoubleSide,
+      emissive: '#f1cc8a',
+      emissiveMap: texture,
+      emissiveIntensity: 0.32,
     }),
   );
   m.position.set(x, y, z);
   m.rotation.y = rotation;
   parent.add(m);
 }
-function mergeStatic(root: T.Group) {
+function mergeStatic(root: T.Group, emitters: StreetLight[] = []) {
   root.updateMatrixWorld(true);
   const groups = new Map<T.Material, T.BufferGeometry[]>();
   const originals: T.Mesh[] = [];
@@ -290,11 +238,45 @@ function mergeStatic(root: T.Group) {
       o instanceof T.InstancedMesh ||
       Array.isArray(o.material) ||
       !(o.material instanceof T.MeshStandardMaterial) ||
-      o.material.map
+      o.material.transparent
     )
       return;
     const a = groups.get(o.material) || [];
-    a.push(o.geometry.clone().applyMatrix4(o.matrixWorld));
+    const geometry = o.geometry.clone().applyMatrix4(o.matrixWorld);
+    // Rounded props are non-indexed; box/cylinder geometry is indexed.
+    // Normalize before batching so no prop silently disappears from the merge.
+    if (!geometry.index)
+      geometry.setIndex(
+        Array.from({ length: geometry.attributes.position.count }, (_, i) => i),
+      );
+    const glowing =
+      o.material.emissive.getHex() !== 0 && o.material.emissiveIntensity >= 1;
+    if (emitters.length && !glowing) {
+      const p = geometry.attributes.position,
+        values = new Float32Array(p.count * 3);
+      for (let i = 0; i < p.count; i++) {
+        let warm = 0;
+        for (const light of emitters) {
+          const distance = Math.hypot(
+            p.getX(i) - light.x,
+            (p.getY(i) - light.y) * 0.55,
+            p.getZ(i) - light.z,
+          );
+          warm += Math.max(0, 1 - distance / 8) ** 2 * 0.6;
+        }
+        values[i * 3] = 1 + warm * 1.45;
+        values[i * 3 + 1] = 1 + warm * 0.83;
+        values[i * 3 + 2] = 1 + warm * 0.3;
+      }
+      geometry.setAttribute('color', new T.BufferAttribute(values, 3));
+      o.material.vertexColors = true;
+    } else {
+      const values = new Float32Array(
+        geometry.attributes.position.count * 3,
+      ).fill(1);
+      geometry.setAttribute('color', new T.BufferAttribute(values, 3));
+    }
+    a.push(geometry);
     groups.set(o.material, a);
     originals.push(o);
   });
@@ -304,12 +286,11 @@ function mergeStatic(root: T.Group) {
   });
   for (const [material, geos] of groups) {
     const merged = mergeGeometries(geos, false);
-    if (merged) {
-      const mesh = new T.Mesh(merged, material);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      root.add(mesh);
-    }
+    if (!merged) throw new Error('Không ghép được geometry tĩnh của khu phố.');
+    const mesh = new T.Mesh(merged, material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    root.add(mesh);
     geos.forEach((g) => g.dispose());
   }
 }
@@ -379,16 +360,17 @@ function facade(
   d: number,
   h: number,
   index: number,
+  surfaces: StreetMaterials,
+  plasterPalette: T.MeshStandardMaterial[],
 ) {
   const f = FRONTAGES[index % 8],
-    plaster = mat(f.color);
-  if (typeof document !== 'undefined' && !plaster.map) {
-    plaster.map = surfaceTexture('plaster');
-    plaster.map.repeat.set(1, 2);
-    plaster.bumpMap = plaster.map;
-    plaster.bumpScale = 0.025;
-  }
-  box(parent, cx, h / 2, cz, w, h, d, plaster);
+    plaster = plasterPalette[index % 8];
+  // A recessed ground floor, closed at the street by glazing or a service counter.
+  // All structural volume remains inside the unchanged authoritative building footprint.
+  box(parent, cx, (h + 2.65) / 2, cz, w, h - 2.65, d, plaster);
+  for (const dx of [-w / 2 + 0.13, w / 2 - 0.13])
+    box(parent, cx + dx, 1.35, cz, 0.26, 2.7, d, plaster);
+  box(parent, cx, 1.3, cz - d / 2 + 0.15, w, 2.6, 0.3, plaster);
   box(parent, cx, 0.32, cz + d / 2 + 0.04, w, 0.64, 0.14, '#899284');
   box(parent, cx, h + 0.08, cz, w + 0.12, 0.18, d + 0.12, '#68786d');
   const front = cz + d / 2 + 0.09;
@@ -403,7 +385,38 @@ function facade(
   box(parent, cx, h - 0.35, front + 0.08, w, 0.13, 0.22, '#e2cfad');
   const door = Math.min(2.3, w * 0.55),
     glass = f.style === 'cafe' || f.style === 'books' || f.style === 'flowers';
-  box(parent, cx, 1.2, front, door, 2.15, 0.07, glass ? '#334e49' : '#62776d');
+  for (const side of [-1, 1]) {
+    const width = (w - door) / 2;
+    box(
+      parent,
+      cx + side * (door / 2 + width / 2),
+      1.26,
+      front - 0.08,
+      width,
+      2.52,
+      0.2,
+      plaster,
+    );
+  }
+  box(
+    parent,
+    cx,
+    1.2,
+    front + 0.01,
+    door,
+    2.15,
+    0.025,
+    glass
+      ? new T.MeshStandardMaterial({
+          color: '#8baba6',
+          roughness: 0.2,
+          metalness: 0.18,
+          transparent: true,
+          opacity: 0.22,
+          depthWrite: false,
+        })
+      : surfaces.shutter,
+  );
   if (glass) {
     for (const dx of [-door / 2, 0, door / 2])
       box(parent, cx + dx, 1.2, front + 0.07, 0.06, 2.1, 0.04, '#a99573');
@@ -640,7 +653,7 @@ function facade(
       0.02,
       '#838f81',
     );
-  cylinder(parent, cx - 0.6, h + 0.53, cz, 0.38, 0.38, 0.85, '#adb8b1', 12);
+  cylinder(parent, cx - 0.6, h + 0.53, cz, 0.38, 0.38, 0.85, '#adb8b1', 16);
   for (let q = 0; q < 3; q++)
     cylinder(
       parent,
@@ -653,6 +666,7 @@ function facade(
       '#d8d7c8',
       12,
     );
+  dressFrontage(parent, cx, front, w, h, index, surfaces);
 }
 function label(text: string, color = '#f2dfad') {
   const map =
@@ -684,9 +698,78 @@ function disposeLabel(sprite: T.Sprite) {
   sprite.material.dispose();
 }
 
+function loadAuthoredSurfaces(
+  surfaces: StreetMaterials,
+  palette: T.MeshStandardMaterial[],
+) {
+  if (typeof document === 'undefined') return { dispose() {} };
+  let disposed = false;
+  const ivory = surfaces.plaster.map!.clone();
+  ivory.needsUpdate = true;
+  palette.forEach((material, i) => {
+    if ([1, 3, 7].includes(i % 8)) material.map = ivory;
+  });
+  const atlas = new T.TextureLoader().load(
+    '/textures/hanoi-surfaces.webp',
+    (texture) => {
+      if (disposed) {
+        texture.dispose();
+        return;
+      }
+      const image = texture.image as HTMLImageElement;
+      const write = (
+        map: T.Texture | null,
+        col: number,
+        row: number,
+        repeatX: number,
+        repeatY: number,
+      ) => {
+        if (!map) return;
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 512;
+        canvas
+          .getContext('2d')!
+          .drawImage(
+            image,
+            (col * image.width) / 2,
+            (row * image.height) / 2,
+            image.width / 2,
+            image.height / 2,
+            0,
+            0,
+            512,
+            512,
+          );
+        map.image = canvas;
+        map.repeat.set(repeatX, repeatY);
+        map.needsUpdate = true;
+      };
+      write(surfaces.plaster.map, 0, 0, 0.22, 0.1);
+      write(ivory, 1, 0, 0.22, 0.1);
+      write(surfaces.timber.map, 0, 1, 1, 1);
+      write(surfaces.paving.map, 1, 1, 0.65, 0.65);
+      texture.dispose();
+    },
+    undefined,
+    () => {
+      /* The deterministic authored maps remain usable if this optional asset cannot load. */
+    },
+  );
+  return {
+    dispose() {
+      disposed = true;
+      atlas.dispose();
+    },
+  };
+}
+
 function cartMesh() {
   const root = new T.Group();
-  box(root, 0, 0.65, 0, 0.92, 0.76, 1.1, '#3e705e');
+  box(root, 0, 0.3, 0, 0.92, 0.07, 1.1, '#34594b');
+  for (const x of [-0.44, 0.44])
+    box(root, x, 0.65, 0, 0.055, 0.76, 1.1, '#3e705e');
+  for (const z of [-0.53, 0.53])
+    box(root, 0, 0.65, z, 0.92, 0.76, 0.055, '#3e705e');
   box(root, 0, 1.04, 0, 1.03, 0.09, 1.2, '#7d9f81');
   box(root, 0, 1.09, 0, 0.78, 0.02, 0.95, '#244b40');
   box(root, 0, 0.8, 0.56, 0.58, 0.15, 0.01, '#e1d7a4');
@@ -715,6 +798,22 @@ function cartMesh() {
   sign(root, 'VỆ SINH', 0, 0.78, 0.57, 0.65, 0.18, '#325d4e', '#e9e1ae');
   for (const x of [-0.46, 0.46])
     box(root, x, 0.65, 0.56, 0.035, 0.68, 0.025, '#829785');
+  for (const x of [-0.47, 0.47]) {
+    for (const z of [-0.4, 0, 0.4])
+      box(root, x, 0.65, z, 0.022, 0.63, 0.035, '#638270');
+    box(root, x, 0.7, 0, 0.016, 0.085, 0.92, '#d5ba78');
+  }
+  for (let k = 0; k < 9; k++)
+    box(
+      root,
+      -0.34 + k * 0.085,
+      0.38 + (k % 3) * 0.032,
+      0.565,
+      0.018,
+      0.012,
+      0.005,
+      '#b7a47e',
+    );
   const load = new T.Group();
   load.name = 'load';
   for (let j = 0; j < 24; j++) {
@@ -733,48 +832,146 @@ function cartMesh() {
   root.add(load);
   return root;
 }
+function glove(parent: T.Group, x: number, y: number, z: number) {
+  const fabric = mat('#aaae9a', 0.94),
+    rubber = mat('#4c5e50', 0.82);
+  const palm = new T.Mesh(
+    new RoundedBoxGeometry(0.13, 0.15, 0.13, 2, 0.025),
+    fabric,
+  );
+  palm.position.set(x, y, z);
+  parent.add(palm);
+  for (let k = 0; k < 4; k++) {
+    const finger = new T.Mesh(
+      new T.CapsuleGeometry(0.018, 0.065 - Math.abs(k - 1.5) * 0.008, 3, 6),
+      rubber,
+    );
+    finger.position.set(x - 0.046 + k * 0.031, y - 0.045, z - 0.062);
+    finger.rotation.x = -0.7;
+    parent.add(finger);
+    beam(
+      parent,
+      new T.Vector3(x - 0.047 + k * 0.031, y + 0.017, z + 0.066),
+      new T.Vector3(x - 0.047 + k * 0.031, y + 0.06, z + 0.065),
+      0.002,
+      '#7c8575',
+    );
+  }
+  const thumb = new T.Mesh(new T.CapsuleGeometry(0.025, 0.055, 3, 6), rubber);
+  thumb.position.set(x - 0.067, y - 0.008, z - 0.02);
+  thumb.rotation.z = -0.6;
+  parent.add(thumb);
+  cylinder(parent, x, y - 0.115, z + 0.065, 0.067, 0.078, 0.055, '#c5c8a9', 12);
+}
 function person(color: string) {
-  const root = new T.Group();
-  box(root, -0.14, 0.42, 0, 0.18, 0.74, 0.2, '#34483f');
-  box(root, 0.14, 0.42, 0, 0.18, 0.74, 0.2, '#34483f');
-  box(root, -0.14, 0.08, 0.07, 0.22, 0.15, 0.37, '#22362e');
-  box(root, 0.14, 0.08, 0.07, 0.22, 0.15, 0.37, '#22362e');
-  cylinder(root, 0, 1.02, 0, 0.27, 0.22, 0.65, color);
-  box(root, 0, 0.94, 0.24, 0.46, 0.09, 0.025, '#e1e7b9');
-  cylinder(root, 0, 1.51, 0, 0.16, 0.17, 0.3, '#c49b78', 10);
-  cylinder(root, 0, 1.68, 0, 0, 0.34, 0.2, '#ceba86', 12);
-  box(root, 0, 1.48, 0.16, 0.1, 0.09, 0.08, '#c49b78');
-  beam(
-    root,
-    new T.Vector3(-0.24, 1.23, 0),
-    new T.Vector3(-0.32, 0.85, 0.2),
-    0.09,
-    color,
+  const root = new T.Group(),
+    body = new T.Group();
+  const torso = new T.Mesh(
+    new RoundedBoxGeometry(0.49, 0.62, 0.29, 2, 0.09),
+    mat(color),
   );
-  beam(
-    root,
-    new T.Vector3(0.24, 1.23, 0),
-    new T.Vector3(0.32, 0.85, 0.25),
-    0.09,
-    color,
+  torso.position.y = 1.1;
+  body.add(torso);
+  for (const y of [0.93, 1.22])
+    box(body, 0, y, 0.151, 0.45, 0.045, 0.012, '#d8d9ae');
+  cylinder(body, 0, 1.45, 0, 0.07, 0.075, 0.12, '#b38f71', 12);
+  const head = new T.Mesh(new T.SphereGeometry(0.16, 14, 10), mat('#bd9a78'));
+  head.position.set(0, 1.59, 0);
+  head.scale.set(0.9, 1.12, 0.95);
+  body.add(head);
+  const helmet = new T.Mesh(
+    new T.SphereGeometry(0.18, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2),
+    mat('#d7bd7b'),
   );
+  helmet.position.y = 1.67;
+  body.add(helmet);
+  cylinder(body, 0, 1.67, 0.025, 0.23, 0.23, 0.035, '#d7bd7b', 16);
+  for (const x of [-0.048, 0.048])
+    box(body, x, 1.6, 0.145, 0.018, 0.012, 0.009, '#303d36');
+  mergeStatic(body);
+  root.add(body);
+  for (const [i, side] of [-1, 1].entries()) {
+    const leg = new T.Group();
+    leg.name = i ? 'leg-right' : 'leg-left';
+    leg.position.set(side * 0.14, 0.82, 0);
+    const trouser = new T.Mesh(
+      new T.CapsuleGeometry(0.087, 0.53, 3, 8),
+      mat('#34483f'),
+    );
+    trouser.position.y = -0.34;
+    leg.add(trouser);
+    box(leg, 0, -0.52, 0.01, 0.17, 0.035, 0.17, '#b8c3a6');
+    const shoe = new T.Mesh(
+      new RoundedBoxGeometry(0.2, 0.14, 0.33, 1, 0.04),
+      mat('#26372f'),
+    );
+    shoe.position.set(0, -0.73, 0.07);
+    leg.add(shoe);
+    // Batch relative to the limb pivot; its parent transform is applied at animation time.
+    const offset = leg.position.clone();
+    leg.position.set(0, 0, 0);
+    mergeStatic(leg);
+    leg.position.copy(offset);
+    root.add(leg);
+    const arm = new T.Group();
+    arm.name = i ? 'arm-right' : 'arm-left';
+    for (const [a, b] of [
+      [
+        [0, -0.03, 0],
+        [0, -0.28, 0.02],
+      ],
+      [
+        [0, -0.28, 0.02],
+        [0, -0.49, 0.16],
+      ],
+    ])
+      beam(
+        arm,
+        new T.Vector3(...(a as [number, number, number])),
+        new T.Vector3(...(b as [number, number, number])),
+        0.073,
+        color,
+      );
+    box(arm, 0, -0.43, 0.12, 0.14, 0.04, 0.13, '#cbd0a9');
+    const hand = new T.Mesh(
+      new T.CapsuleGeometry(0.055, 0.06, 3, 8),
+      mat('#a9af97'),
+    );
+    hand.position.set(0, -0.53, 0.18);
+    arm.add(hand);
+    mergeStatic(arm);
+    arm.position.set(side * 0.27, 1.35, 0);
+    root.add(arm);
+  }
+  const broom = new T.Group();
+  broom.name = 'worker-broom';
   beam(
-    root,
-    new T.Vector3(0.32, 0.95, 0.25),
-    new T.Vector3(0.5, 0.12, 0.7),
-    0.025,
-    '#a28b61',
+    broom,
+    new T.Vector3(0.37, 1, 0.28),
+    new T.Vector3(0.56, 0.13, 0.67),
+    0.02,
+    '#99815b',
   );
-  box(root, 0.5, 0.1, 0.7, 0.36, 0.15, 0.16, '#c5ac6b');
+  for (let k = 0; k < 18; k++)
+    beam(
+      broom,
+      new T.Vector3(0.56, 0.15, 0.67),
+      new T.Vector3(0.36 + k * 0.023, 0.04, 0.74),
+      0.006,
+      '#b9a06a',
+    );
+  mergeStatic(broom);
+  root.add(broom);
   return root;
 }
 export function createWorld() {
+  clearDetailMaterialCache();
   const scene = new T.Scene();
-  scene.background = new T.Color('#dfd2b5');
-  scene.fog = new T.Fog('#dfd2b5', 30, 95);
-  const hemi = new T.HemisphereLight('#f4e8ce', '#6b7969', 2.4);
+  scene.background = new T.Color('#142535');
+  scene.fog = new T.Fog('#142535', 32, 100);
+  const hemi = new T.HemisphereLight('#b5c9df', '#6c5843', 0.95);
   scene.add(hemi);
-  const sun = new T.DirectionalLight('#ffdab1', 3.4);
+  const sun = new T.DirectionalLight('#b7cce2', 0.8);
   sun.position.set(12, 24, -15);
   sun.target.position.set(32, 0, 22);
   scene.add(sun, sun.target);
@@ -788,25 +985,30 @@ export function createWorld() {
   sun.shadow.normalBias = 0.035;
   sun.shadow.bias = -0.0002;
   const staticRoot = new T.Group();
+  staticRoot.name = 'hanoi-night-street';
   scene.add(staticRoot);
-  const asphalt = mat('#9b9c94', 0.92);
-  if (typeof document !== 'undefined') {
-    asphalt.map = surfaceTexture('asphalt');
-    asphalt.map.repeat.set(30, 24);
-    asphalt.bumpMap = asphalt.map;
-    asphalt.bumpScale = 0.022;
-    asphalt.roughnessMap = asphalt.map;
-    asphalt.needsUpdate = true;
-  }
-  box(staticRoot, 32, -0.18, 20, 110, 0.3, 100, asphalt);
+  const surfaces = createStreetMaterials();
+  surfaces.materials.forEach((m) => (m.userData.worldUV = true));
+  const plasterPalette = FRONTAGES.map((f) => {
+    const material = surfaces.plaster.clone();
+    material.color.set(f.color);
+    material.userData.worldUV = true;
+    return material;
+  });
+  const authoredAssets = loadAuthoredSurfaces(surfaces, plasterPalette);
+  const asphalt = surfaces.asphalt;
+  asphalt.roughness = 0.64;
+  const roadGeometry = new T.PlaneGeometry(110, 100, 55, 50);
+  roadGeometry.rotateX(-Math.PI / 2);
+  const roadUV = roadGeometry.attributes.uv;
+  for (let i = 0; i < roadUV.count; i++)
+    roadUV.setXY(i, roadUV.getX(i) * 55, roadUV.getY(i) * 50);
+  const road = new T.Mesh(roadGeometry, asphalt);
+  road.position.set(32, -0.03, 20);
+  road.receiveShadow = true;
+  staticRoot.add(road);
   // Slight raised pavements along both active streets.
-  const paving = mat('#c7c6b7');
-  if (typeof document !== 'undefined') {
-    paving.map = surfaceTexture('paving');
-    paving.map.repeat.set(20, 1);
-    paving.bumpMap = paving.map;
-    paving.bumpScale = 0.045;
-  }
+  const paving = surfaces.paving;
   [
     [32, 11.6, 64, 1.1],
     [32, 30.2, 64, 2.7],
@@ -838,6 +1040,8 @@ export function createWorld() {
         d,
         FRONTAGES[index % 8].height,
         index,
+        surfaces,
+        plasterPalette,
       );
     }
   });
@@ -846,11 +1050,39 @@ export function createWorld() {
     const g = new T.Group();
     g.position.set(4 + i * 8, 0, 44.5);
     g.rotation.y = Math.PI;
-    facade(g, 0, 0, 7.9, 8, FRONTAGES[i].height, i);
+    facade(g, 0, 0, 7.9, 8, FRONTAGES[i].height, i, surfaces, plasterPalette);
     staticRoot.add(g);
   }
   for (let x = -15; x < 90; x += 12)
     box(staticRoot, x, 5, -4, 8, 8, 8, '#a8b4a3');
+  // Beyond the walking boundary, roof silhouettes close the vista instead of an empty horizon.
+  for (let i = 0; i < 9; i++) {
+    const height = 9 + ((i * 7) % 9),
+      z = i * 7 - 3;
+    box(
+      staticRoot,
+      77 + (i % 2) * 3,
+      height / 2,
+      z,
+      12,
+      height,
+      6.8,
+      plasterPalette[i % 8],
+    );
+    box(staticRoot, 77 + (i % 2) * 3, height, z, 12.3, 0.2, 7, '#586268');
+    for (let y = 2; y < height - 1; y += 2.4)
+      for (const dz of [-1.8, 0, 1.8])
+        box(
+          staticRoot,
+          70.94 + (i % 2) * 3,
+          y,
+          z + dz,
+          0.04,
+          1.25,
+          0.85,
+          (i + y) % 3 < 1 ? '#a58b61' : '#33494b',
+        );
+  }
   // Low walls at street ends mark the actual walking boundary.
   for (const x of [-0.15, 64.15]) {
     box(staticRoot, x, 0.5, 26, 0.3, 1, 29, '#8a9988');
@@ -861,11 +1093,11 @@ export function createWorld() {
     const x = tr.x * S,
       z = tr.y * S;
     box(staticRoot, x, 0.1, z, 1.1, 0.18, 1.1, '#777e62');
-    cylinder(staticRoot, x, 1.7, z, 0.11, 0.22, 3.4, '#736c50');
+    cylinder(staticRoot, x, 2.3, z, 0.12, 0.25, 4.6, '#736c50', 12);
     beam(
       staticRoot,
-      new T.Vector3(x, 2.2, z),
-      new T.Vector3(x - 0.8, 3.5, z),
+      new T.Vector3(x, 3.4, z),
+      new T.Vector3(x - 0.8, 5.3, z),
       0.09,
       '#736c50',
     );
@@ -873,10 +1105,10 @@ export function createWorld() {
       const a = j * 1.047;
       beam(
         staticRoot,
-        new T.Vector3(x, 2.4, z),
+        new T.Vector3(x, 3.6, z),
         new T.Vector3(
           x + Math.cos(a) * 1.45,
-          3.55 + (j % 2) * 0.5,
+          5.1 + (j % 2) * 0.6,
           z + Math.sin(a) * 1.3,
         ),
         0.045,
@@ -891,7 +1123,7 @@ export function createWorld() {
         );
         m.position.set(
           x + Math.sin(j * 2.4) * 1.8,
-          3.4 + (j % 4) * 0.22,
+          5 + (j % 4) * 0.28,
           z + Math.cos(j * 2.4) * 1.1,
         );
         staticRoot.add(m);
@@ -918,38 +1150,26 @@ export function createWorld() {
         box(staticRoot, x + dx + ex, 0.14, 12.5, 0.035, 0.28, 0.24, '#747f59');
     }
   }
-  for (const x of [11, 14, 29, 56]) {
-    const bike = new T.Group();
-    for (const z of [-0.5, 0.5]) {
-      const wheel = cylinder(bike, 0, 0.26, z, 0.25, 0.25, 0.1, '#303e35', 12);
-      wheel.rotation.z = Math.PI / 2;
-    }
-    box(bike, 0, 0.55, 0, 0.35, 0.4, 0.8, '#6c7f76');
-    box(bike, 0, 0.82, -0.1, 0.4, 0.12, 0.65, '#263d32');
-    beam(
-      bike,
-      new T.Vector3(0, 0.4, 0.5),
-      new T.Vector3(0, 1, 0.35),
-      0.035,
-      '#a7b0a0',
-    );
-    beam(
-      bike,
-      new T.Vector3(-0.28, 1, 0.35),
-      new T.Vector3(0.28, 1, 0.35),
-      0.03,
-      '#3a5343',
-    );
-    bike.position.set(x, 0, 29.5);
-    bike.rotation.y = 0.6;
-    staticRoot.add(bike);
-  }
+  [11, 14, 29, 56, 46].forEach((x, i) =>
+    detailedScooter(
+      staticRoot,
+      x,
+      29.25,
+      0.47 + i * 0.09,
+      ['#a24f3e', '#b6b7a8', '#497e79', '#4d5c72', '#d2bc87'][i],
+      surfaces,
+    ),
+  );
   for (const z of [12, 30])
-    for (let j = 0; j < 2; j++) {
+    for (let j = 0; j < 5; j++) {
       const points = Array.from(
         { length: 30 },
         (_, i) =>
-          new T.Vector3(i * 2.3, 4.7 + j * 0.13 - Math.sin(i * 0.38) * 0.3, z),
+          new T.Vector3(
+            i * 2.3,
+            5.4 + j * 0.11 - Math.sin(i * 0.38 + j * 0.06) * 0.5,
+            z,
+          ),
       );
       const curve = new T.CatmullRomCurve3(points);
       const wire = new T.Mesh(
@@ -1007,7 +1227,7 @@ export function createWorld() {
     '#eeead2',
   );
   const board = new T.Group();
-  board.position.set(22.1, 0, 38.2);
+  board.position.set(20.8, 0, 39.3);
   for (const z of [-0.8, 0.8])
     box(board, 0, 0.85, z, 0.07, 1.7, 0.07, '#6c795f');
   box(board, 0, 1.45, 0, 0.1, 1.16, 2, '#34574b');
@@ -1031,8 +1251,9 @@ export function createWorld() {
     ),
   );
   staticRoot.add(board);
-  mergeStatic(staticRoot);
-  return { scene, sun, hemi };
+  const lighting = streetLighting(scene, staticRoot, surfaces);
+  mergeStatic(staticRoot, lighting.emitters);
+  return { scene, sun, hemi, surfaces, lighting, authoredAssets };
 }
 export function createFirstPersonScene(
   canvas: HTMLCanvasElement,
@@ -1044,20 +1265,35 @@ export function createFirstPersonScene(
     powerPreference: 'high-performance',
   });
   renderer.setPixelRatio(
-    Math.min(devicePixelRatio, settings.quality === 'high' ? 1.7 : 1),
+    Math.min(devicePixelRatio, settings.quality === 'high' ? 1.7 : 0.75),
   );
   renderer.shadowMap.enabled = settings.quality === 'high';
   renderer.shadowMap.type = T.PCFShadowMap;
   renderer.outputColorSpace = T.SRGBColorSpace;
   renderer.toneMapping = T.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
-  const { scene, sun, hemi } = createWorld();
+  renderer.toneMappingExposure = 1.24;
+  const { scene, sun, hemi, surfaces, lighting, authoredAssets } =
+    createWorld();
   const pmrem = new T.PMREMGenerator(renderer);
-  const room = new RoomEnvironment();
-  const environment = pmrem.fromScene(room, 0.04);
+  const skyTexture = canvasTexture(512, 256, (c) => {
+    const gradient = c.createLinearGradient(0, 0, 0, 256);
+    gradient.addColorStop(0, '#1b304c');
+    gradient.addColorStop(0.45, '#516d7a');
+    gradient.addColorStop(0.52, '#233c43');
+    gradient.addColorStop(0.65, '#332c23');
+    gradient.addColorStop(1, '#0b1116');
+    c.fillStyle = gradient;
+    c.fillRect(0, 0, 512, 256);
+    for (let i = 0; i < 16; i++) {
+      c.fillStyle = ['#997650', '#46656d', '#b89864'][i % 3];
+      c.fillRect(i * 33, 120 + (i % 3) * 3, 10 + (i % 4) * 3, 6);
+    }
+  });
+  skyTexture.mapping = T.EquirectangularReflectionMapping;
+  const environment = pmrem.fromEquirectangular(skyTexture);
+  skyTexture.dispose();
   scene.environment = environment.texture;
-  scene.environmentIntensity = 0.35;
-  room.dispose();
+  scene.environmentIntensity = 0.55;
   pmrem.dispose();
   const camera = new T.PerspectiveCamera(settings.fov, 1, 0.04, 130);
   camera.rotation.order = 'YXZ';
@@ -1077,9 +1313,42 @@ export function createFirstPersonScene(
     0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 5, 0, 5, 6, 0, 6, 7, 0, 7, 8, 0, 8, 1,
   ]);
   leafGeo.computeVertexNormals();
+  const leafPositions = leafGeo.attributes.position;
+  const leafUV = new Float32Array(leafPositions.count * 2);
+  for (let i = 0; i < leafPositions.count; i++) {
+    leafUV[i * 2] = leafPositions.getX(i) / 0.12 + 0.5;
+    leafUV[i * 2 + 1] = leafPositions.getZ(i) / 0.26 + 0.5;
+  }
+  leafGeo.setAttribute('uv', new T.BufferAttribute(leafUV, 2));
+  const leafMap =
+    typeof document === 'undefined'
+      ? null
+      : canvasTexture(128, 256, (c) => {
+          c.fillStyle = '#d0b47d';
+          c.fillRect(0, 0, 128, 256);
+          for (let j = 0; j < 180; j++) {
+            c.fillStyle = j % 3 ? '#80694816' : '#eee0ab20';
+            c.fillRect((j * 83) % 128, (j * 59) % 256, 8, 3);
+          }
+          c.strokeStyle = '#645637a0';
+          c.lineWidth = 2;
+          c.beginPath();
+          c.moveTo(64, 0);
+          c.lineTo(64, 256);
+          c.stroke();
+          c.lineWidth = 1;
+          for (let j = 1; j < 9; j++)
+            for (const side of [-1, 1]) {
+              c.beginPath();
+              c.moveTo(64, j * 26);
+              c.lineTo(64 + side * (48 - Math.abs(j - 5) * 7), j * 26 - 35);
+              c.stroke();
+            }
+        });
   const leafMaterial = new T.MeshStandardMaterial({
-    color: '#e0af55',
-    roughness: 0.9,
+    color: '#fff0c7',
+    map: leafMap,
+    roughness: 0.78,
     side: T.DoubleSide,
   });
   const leaves = new T.InstancedMesh(leafGeo, leafMaterial, 1600);
@@ -1199,8 +1468,10 @@ export function createFirstPersonScene(
   falling.frustumCulled = false;
   scene.add(falling);
   const viewScene = new T.Scene();
-  viewScene.add(new T.HemisphereLight('#fff1da', '#7e8b76', 3.4));
-  const vSun = new T.DirectionalLight('#ffe9bf', 2);
+  viewScene.environment = environment.texture;
+  viewScene.environmentIntensity = 0.3;
+  viewScene.add(new T.HemisphereLight('#d5dce0', '#635a47', 1.6));
+  const vSun = new T.DirectionalLight('#ffe9bf', 1.3);
   vSun.position.set(-2, 4, 3);
   viewScene.add(vSun);
   const viewCamera = new T.PerspectiveCamera(66, 1, 0.02, 4);
@@ -1210,7 +1481,7 @@ export function createFirstPersonScene(
     new T.Vector3(0.23, -0.24, -0.45),
     new T.Vector3(0.46, -0.79, -1.35),
     0.022,
-    '#a58b58',
+    surfaces.timber,
   );
   for (let i = 0; i < 45; i++) {
     const f = i / 44;
@@ -1237,7 +1508,19 @@ export function createFirstPersonScene(
     0.095,
     '#e4a54e',
   );
-  cylinder(broom, 0.29, -0.3, -0.6, 0.07, 0.07, 0.2, '#c4b995');
+  glove(broom, 0.29, -0.3, -0.6);
+  for (let j = 0; j < 6; j++)
+    cylinder(
+      broom,
+      0.43,
+      -0.66 - j * 0.012,
+      -1.16 - j * 0.019,
+      0.029,
+      0.029,
+      0.006,
+      '#7f7759',
+      10,
+    );
   viewScene.add(broom);
   const scoop = new T.Group();
   beam(
@@ -1245,7 +1528,7 @@ export function createFirstPersonScene(
     new T.Vector3(0.3, -0.3, -0.45),
     new T.Vector3(0.32, -0.55, -1.2),
     0.025,
-    '#ac936a',
+    surfaces.timber,
   );
   const blade = box(
     scoop,
@@ -1255,7 +1538,7 @@ export function createFirstPersonScene(
     0.4,
     0.028,
     0.45,
-    mat('#93a39b', 0.28),
+    surfaces.metal,
   );
   blade.rotation.x = 0.17;
   for (const x of [0.12, 0.52])
@@ -1268,7 +1551,18 @@ export function createFirstPersonScene(
     0.09,
     '#dfa351',
   );
-  box(scoop, 0.32, -0.34, -0.59, 0.13, 0.16, 0.15, '#c5bd9d');
+  glove(scoop, 0.32, -0.34, -0.59);
+  for (let j = 0; j < 6; j++)
+    box(
+      scoop,
+      0.19 + j * 0.049,
+      -0.563,
+      -1.35,
+      0.004,
+      0.004,
+      0.34 - (j % 2) * 0.08,
+      '#c0c4b5',
+    );
   const scoopLoad = new T.InstancedMesh(leafGeo, leafMaterial, 24);
   scoopLoad.instanceMatrix.setUsage(T.DynamicDrawUsage);
   // The first scoop frame can have zero instances; its cached empty bounds
@@ -1285,7 +1579,7 @@ export function createFirstPersonScene(
       0.09,
       '#dfa351',
     );
-    box(pushHands, x, -0.4, -0.75, 0.13, 0.13, 0.19, '#c5bd9d');
+    glove(pushHands, x, -0.4, -0.75);
   }
   beam(
     pushHands,
@@ -1295,6 +1589,8 @@ export function createFirstPersonScene(
     '#41594a',
   );
   viewScene.add(pushHands);
+  // Tool detail is batched once; animation still moves each complete tool group.
+  for (const group of [broom, scoop, pushHands]) mergeStatic(group);
   let last = 0,
     camX = 19,
     camZ = 36.5,
@@ -1350,7 +1646,7 @@ export function createFirstPersonScene(
     const key = JSON.stringify(rs);
     if (key !== lastSettings) {
       renderer.setPixelRatio(
-        Math.min(devicePixelRatio, rs.quality === 'high' ? 1.7 : 1),
+        Math.min(devicePixelRatio, rs.quality === 'high' ? 1.7 : 0.75),
       );
       renderer.shadowMap.enabled = rs.quality === 'high';
       camera.fov = rs.fov;
@@ -1372,11 +1668,11 @@ export function createFirstPersonScene(
       }
     }
     const wet = rainy(g);
-    const sky = wet ? '#9bada6' : '#dfd2b5';
+    const sky = wet ? '#15232b' : '#142535';
     (scene.background as T.Color).lerp(new T.Color(sky), dt * 2);
     (scene.fog as T.Fog).color.copy(scene.background as T.Color);
-    sun.intensity = T.MathUtils.lerp(sun.intensity, wet ? 1.1 : 3.4, dt * 2);
-    hemi.intensity = wet ? 2 : 2.4;
+    sun.intensity = T.MathUtils.lerp(sun.intensity, wet ? 0.45 : 0.8, dt * 2);
+    hemi.intensity = wet ? 0.9 : 0.95;
     if (p && !options.menu) {
       const f = 1 - Math.exp(-dt * 24);
       camX += (p.x * S - camX) * f;
@@ -1396,13 +1692,23 @@ export function createFirstPersonScene(
       camX = 19.2;
       camZ = 36.4;
     }
-    const groundMaterial = mat('#9b9c94', 0.92);
-    groundMaterial.roughness = T.MathUtils.lerp(
-      groundMaterial.roughness,
-      wet ? 0.38 : 0.92,
-      dt,
+    const nearbyLights = [...lighting.emitters].sort(
+      (a, b) =>
+        Math.hypot(a.x - camera.position.x, a.z - camera.position.z) -
+        Math.hypot(b.x - camera.position.x, b.z - camera.position.z),
     );
-    groundMaterial.color.lerp(new T.Color(wet ? '#7f8987' : '#9b9c94'), dt);
+    lighting.lights.forEach((light, i) => {
+      light.visible = rs.quality === 'high';
+      const source = nearbyLights[i];
+      light.position.set(source.x, source.y, source.z);
+      light.target.position.set(source.x, 0, source.z + 0.6);
+      light.intensity = source.power;
+    });
+    surfaces.asphalt.roughness = T.MathUtils.lerp(
+      surfaces.asphalt.roughness,
+      wet ? 0.34 : 0.64,
+      dt * 2,
+    );
     for (const id of smoothLeaves.keys())
       if (!g.leaves.some((l) => l.id === id)) smoothLeaves.delete(id);
     let count = 0;
@@ -1507,6 +1813,20 @@ export function createFirstPersonScene(
           new T.Vector3(other.x * S, 0, other.y * S),
           1 - Math.exp(-dt * 12),
         );
+        const previous = model.userData.walkPosition as T.Vector3 | undefined;
+        const speed = previous
+          ? Math.min(3, model.position.distanceTo(previous) / dt)
+          : 0;
+        model.userData.walkPosition = model.position.clone();
+        model.userData.stride = (model.userData.stride ?? 0) + speed * dt * 7;
+        const stride =
+          Math.sin(model.userData.stride) * Math.min(0.48, speed * 0.2);
+        model.getObjectByName('leg-left')!.rotation.x = stride;
+        model.getObjectByName('leg-right')!.rotation.x = -stride;
+        model.getObjectByName('arm-left')!.rotation.x = -stride * 0.65;
+        model.getObjectByName('arm-right')!.rotation.x = other.working
+          ? Math.sin(t * 0.01) * 0.22
+          : stride * 0.65;
         model.rotation.y = Math.PI / 2 - other.face;
         model.scale.y = other.crouched ? 0.68 : 1;
       });
@@ -1692,9 +2012,12 @@ export function createFirstPersonScene(
   }
   function dispose() {
     observer.disconnect();
+    authoredAssets.dispose();
     const geos = new Set<T.BufferGeometry>(),
       materials = new Set<T.Material>(),
       textures = new Set<T.Texture>();
+    surfaces.materials.forEach((m) => materials.add(m));
+    surfaces.textures.forEach((texture) => textures.add(texture));
     for (const s of [scene, viewScene])
       s.traverse((o) => {
         if (o instanceof T.Sprite) {
@@ -1716,9 +2039,11 @@ export function createFirstPersonScene(
     textures.forEach((t) => t?.dispose());
     materials.forEach((m) => m.dispose());
     mats.clear();
+    clearDetailMaterialCache();
     environment.dispose();
     renderer.dispose();
-    renderer.forceContextLoss();
+    // The canvas can be reused by React hot reload. Forcing context loss here
+    // makes the immediately following renderer fail before WebGL can restore it.
   }
   return { render, dispose, resize };
 }

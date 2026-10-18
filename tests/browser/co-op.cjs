@@ -183,16 +183,16 @@ let launchedBrowser;
   await keys(a, [], ['q']);
   await until(() => !!states[0].players[0].pushing);
   await contexts[0].setOffline(true);
+  const offlineAt = Date.now();
   const beforeOffline = states[0].players[0].seq;
   await sleep(4100);
   assert(
     (await a.locator('.network-status').innerText()).includes('Đang nối lại'),
   );
-  assert.equal(
-    states[1].carts[0].owner,
-    null,
-    'idle owner must release cart via the other client poll',
-  );
+  // Release happens on a server request, then must arrive in a browser snapshot.
+  // A fixed 4.1 s sleep can inspect the previous response on a busy software GPU.
+  await until(() => states[1].carts[0].owner === null, 15000);
+  const releaseObservedAfterOfflineMs = Date.now() - offlineAt;
   await contexts[0].setOffline(false);
   await until(() => states[0]?.players[0].seq > beforeOffline);
   await a.waitForFunction(
@@ -221,6 +221,7 @@ let launchedBrowser;
       p95: sorted[Math.floor(sorted.length * 0.95)],
     },
     expectedOfflineErrors: errors.length,
+    releaseObservedAfterOfflineMs,
     runtimeErrors,
     players: states[0].players.map((p) => ({
       name: p.name,

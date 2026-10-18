@@ -354,8 +354,10 @@ export default function GameClient() {
         if (stopped || !canvas.current) return;
         try {
           scene = createFirstPersonScene(canvas.current, sref.current);
+          setGraphicsError('');
           setReady(true);
         } catch (e) {
+          console.error('Khởi tạo cảnh 3D thất bại:', e);
           setGraphicsError(
             'Không khởi tạo được đồ họa 3D. Hãy bật tăng tốc phần cứng và mở bằng Chrome/Edge trên máy tính.',
           );
@@ -860,7 +862,7 @@ export default function GameClient() {
           <small>
             FIRST PERSON
             <br />
-            PLAYTEST 04
+            PHỐ ĐÊM · 05
           </small>
         </button>
         {playing && (
@@ -895,7 +897,7 @@ export default function GameClient() {
         <div className="menu-layout">
           <section className="welcome">
             <div className="overline">
-              <span /> HÀ NỘI, MỘT SÁNG MÙA THU
+              <span /> HÀ NỘI, DƯỚI NHỮNG NGỌN ĐÈN
             </div>
             <h1>
               Chậm một chút.
@@ -1014,7 +1016,7 @@ export default function GameClient() {
             <span>
               PHỐ NGUYỄN DU <small>Không gian lấy cảm hứng từ Hà Nội</small>
             </span>
-            <b>05:30</b>
+            <b>22:40</b>
           </div>
         </div>
       )}
@@ -1778,7 +1780,7 @@ export default function GameClient() {
         </span>
         <span>
           {mode === 'online' ? `${ping} MS · ` : ''}
-          {fps} FPS <i /> GAMEPLAY PROTOTYPE 0.4
+          {fps} FPS <i /> PHỐ ĐÊM · VISUAL PREVIEW 0.5
         </span>
       </footer>
     </div>
