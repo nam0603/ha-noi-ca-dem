@@ -1,4 +1,6 @@
 import * as T from 'three';
+import { createCameraCollision, createFollowCamera } from './follow-camera';
+import { createWorkerAvatar, animateWorkerAvatar } from './worker-avatar';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import {
@@ -21,6 +23,7 @@ import {
   CART_CAPACITY,
   waterDepth,
   rainy,
+  taskAt,
   type Game,
   type Player,
   type Task,
@@ -29,6 +32,7 @@ const S = SCALE;
 export type Look = { yaw: number; pitch: number };
 export type Settings = {
   quality: 'low' | 'high';
+  view: 'third' | 'first';
   sensitivity: number;
   motion: boolean;
   fov: number;
@@ -863,107 +867,6 @@ function glove(parent: T.Group, x: number, y: number, z: number) {
   parent.add(thumb);
   cylinder(parent, x, y - 0.115, z + 0.065, 0.067, 0.078, 0.055, '#c5c8a9', 12);
 }
-function person(color: string) {
-  const root = new T.Group(),
-    body = new T.Group();
-  const torso = new T.Mesh(
-    new RoundedBoxGeometry(0.49, 0.62, 0.29, 2, 0.09),
-    mat(color),
-  );
-  torso.position.y = 1.1;
-  body.add(torso);
-  for (const y of [0.93, 1.22])
-    box(body, 0, y, 0.151, 0.45, 0.045, 0.012, '#d8d9ae');
-  cylinder(body, 0, 1.45, 0, 0.07, 0.075, 0.12, '#b38f71', 12);
-  const head = new T.Mesh(new T.SphereGeometry(0.16, 14, 10), mat('#bd9a78'));
-  head.position.set(0, 1.59, 0);
-  head.scale.set(0.9, 1.12, 0.95);
-  body.add(head);
-  const helmet = new T.Mesh(
-    new T.SphereGeometry(0.18, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2),
-    mat('#d7bd7b'),
-  );
-  helmet.position.y = 1.67;
-  body.add(helmet);
-  cylinder(body, 0, 1.67, 0.025, 0.23, 0.23, 0.035, '#d7bd7b', 16);
-  for (const x of [-0.048, 0.048])
-    box(body, x, 1.6, 0.145, 0.018, 0.012, 0.009, '#303d36');
-  mergeStatic(body);
-  root.add(body);
-  for (const [i, side] of [-1, 1].entries()) {
-    const leg = new T.Group();
-    leg.name = i ? 'leg-right' : 'leg-left';
-    leg.position.set(side * 0.14, 0.82, 0);
-    const trouser = new T.Mesh(
-      new T.CapsuleGeometry(0.087, 0.53, 3, 8),
-      mat('#34483f'),
-    );
-    trouser.position.y = -0.34;
-    leg.add(trouser);
-    box(leg, 0, -0.52, 0.01, 0.17, 0.035, 0.17, '#b8c3a6');
-    const shoe = new T.Mesh(
-      new RoundedBoxGeometry(0.2, 0.14, 0.33, 1, 0.04),
-      mat('#26372f'),
-    );
-    shoe.position.set(0, -0.73, 0.07);
-    leg.add(shoe);
-    // Batch relative to the limb pivot; its parent transform is applied at animation time.
-    const offset = leg.position.clone();
-    leg.position.set(0, 0, 0);
-    mergeStatic(leg);
-    leg.position.copy(offset);
-    root.add(leg);
-    const arm = new T.Group();
-    arm.name = i ? 'arm-right' : 'arm-left';
-    for (const [a, b] of [
-      [
-        [0, -0.03, 0],
-        [0, -0.28, 0.02],
-      ],
-      [
-        [0, -0.28, 0.02],
-        [0, -0.49, 0.16],
-      ],
-    ])
-      beam(
-        arm,
-        new T.Vector3(...(a as [number, number, number])),
-        new T.Vector3(...(b as [number, number, number])),
-        0.073,
-        color,
-      );
-    box(arm, 0, -0.43, 0.12, 0.14, 0.04, 0.13, '#cbd0a9');
-    const hand = new T.Mesh(
-      new T.CapsuleGeometry(0.055, 0.06, 3, 8),
-      mat('#a9af97'),
-    );
-    hand.position.set(0, -0.53, 0.18);
-    arm.add(hand);
-    mergeStatic(arm);
-    arm.position.set(side * 0.27, 1.35, 0);
-    root.add(arm);
-  }
-  const broom = new T.Group();
-  broom.name = 'worker-broom';
-  beam(
-    broom,
-    new T.Vector3(0.37, 1, 0.28),
-    new T.Vector3(0.56, 0.13, 0.67),
-    0.02,
-    '#99815b',
-  );
-  for (let k = 0; k < 18; k++)
-    beam(
-      broom,
-      new T.Vector3(0.56, 0.15, 0.67),
-      new T.Vector3(0.36 + k * 0.023, 0.04, 0.74),
-      0.006,
-      '#b9a06a',
-    );
-  mergeStatic(broom);
-  root.add(broom);
-  return root;
-}
 export function createWorld() {
   clearDetailMaterialCache();
   const scene = new T.Scene();
@@ -1232,7 +1135,7 @@ export function createWorld() {
     box(board, 0, 0.85, z, 0.07, 1.7, 0.07, '#6c795f');
   box(board, 0, 1.45, 0, 0.1, 1.16, 2, '#34574b');
   [
-    'CA ĐẦU · LÀM CÙNG NHAU',
+    'CA ĐẦU · V ĐỔI GÓC NHÌN',
     '1 · C + E QUÉT LÁ',
     '2 · XẺNG + E HỐT',
     'E ĐỔ XE · Q ĐẨY · E BÀN GIAO',
@@ -1252,8 +1155,17 @@ export function createWorld() {
   );
   staticRoot.add(board);
   const lighting = streetLighting(scene, staticRoot, surfaces);
+  const cameraCollision = createCameraCollision(staticRoot);
   mergeStatic(staticRoot, lighting.emitters);
-  return { scene, sun, hemi, surfaces, lighting, authoredAssets };
+  return {
+    scene,
+    sun,
+    hemi,
+    surfaces,
+    lighting,
+    authoredAssets,
+    cameraCollision,
+  };
 }
 export function createFirstPersonScene(
   canvas: HTMLCanvasElement,
@@ -1272,8 +1184,15 @@ export function createFirstPersonScene(
   renderer.outputColorSpace = T.SRGBColorSpace;
   renderer.toneMapping = T.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.24;
-  const { scene, sun, hemi, surfaces, lighting, authoredAssets } =
-    createWorld();
+  const {
+    scene,
+    sun,
+    hemi,
+    surfaces,
+    lighting,
+    authoredAssets,
+    cameraCollision,
+  } = createWorld();
   const pmrem = new T.PMREMGenerator(renderer);
   const skyTexture = canvasTexture(512, 256, (c) => {
     const gradient = c.createLinearGradient(0, 0, 0, 256);
@@ -1297,6 +1216,10 @@ export function createFirstPersonScene(
   pmrem.dispose();
   const camera = new T.PerspectiveCamera(settings.fov, 1, 0.04, 130);
   camera.rotation.order = 'YXZ';
+  const followCamera = createFollowCamera(cameraCollision);
+  const playerPosition = new T.Vector3();
+  let previousView = settings.view;
+  let localAvatarVisible = true;
   const leafGeo = new T.BufferGeometry();
   leafGeo.setAttribute(
     'position',
@@ -1611,7 +1534,7 @@ export function createFirstPersonScene(
     zoneLabels.push(pair);
   }
   let lastRound = -1;
-  const workingTarget = new T.Vector3();
+
   const resize = () => {
     const w = canvas.clientWidth,
       h = canvas.clientHeight;
@@ -1656,6 +1579,7 @@ export function createFirstPersonScene(
     }
     if (g.round !== lastRound) {
       lastRound = g.round;
+      followCamera.reset();
       smoothLeaves.clear();
       cartModels.forEach((model) => (model.userData.placed = false));
       people.forEach((model, id) => {
@@ -1679,8 +1603,23 @@ export function createFirstPersonScene(
       camZ += (p.y * S - camZ) * f;
       eye += ((p.crouched ? 1.04 : 1.68) - eye) * (1 - Math.exp(-dt * 12));
       const bob = rs.motion && options.moving ? Math.sin(t * 0.009) * 0.018 : 0;
-      camera.position.set(camX, eye + bob, camZ);
-      camera.rotation.set(look.pitch, look.yaw, 0, 'YXZ');
+      if (rs.view !== previousView) followCamera.reset();
+      previousView = rs.view;
+      if (rs.view === 'third') {
+        const result = followCamera.update(
+          camera,
+          playerPosition.set(camX, 0, camZ),
+          look.yaw,
+          look.pitch,
+          p.crouched,
+          dt,
+        );
+        localAvatarVisible = result.avatarVisible;
+      } else {
+        camera.position.set(camX, eye + bob, camZ);
+        camera.rotation.set(look.pitch, look.yaw, 0, 'YXZ');
+        localAvatarVisible = false;
+      }
     } else {
       camera.position.set(19.2, 1.68, 36.4);
       camera.rotation.set(
@@ -1689,6 +1628,7 @@ export function createFirstPersonScene(
         0,
         'YXZ',
       );
+      followCamera.reset();
       camX = 19.2;
       camZ = 36.4;
     }
@@ -1787,49 +1727,67 @@ export function createFirstPersonScene(
       load.scale.y = Math.max(0.1, c.stored / CART_CAPACITY);
     });
     for (const [pid, m] of people) {
-      if (!g.players.some((p) => p.id === pid) || pid === myId) {
+      if (!g.players.some((p) => p.id === pid)) {
         m.removeFromParent();
+        const ownedMaterials = new Set<T.Material>();
         m.traverse((o) => {
-          if (o instanceof T.Mesh) o.geometry.dispose();
+          if (o instanceof T.Mesh) {
+            o.geometry.dispose();
+            for (const material of Array.isArray(o.material)
+              ? o.material
+              : [o.material])
+              ownedMaterials.add(material);
+          }
           if (o instanceof T.Sprite) disposeLabel(o);
         });
+        ownedMaterials.forEach((material) => material.dispose());
         people.delete(pid);
       }
     }
-    g.players
-      .filter((p) => p.id !== myId)
-      .forEach((other) => {
-        let model = people.get(other.id);
-        if (!model) {
-          model = person(COLORS[other.color]);
-          const name = label(other.name, COLORS[other.color]);
-          name.position.y = 2.05;
-          model.add(name);
-          model.position.set(other.x * S, 0, other.y * S);
-          scene.add(model);
-          people.set(other.id, model);
-        }
+    g.players.forEach((other) => {
+      let model = people.get(other.id);
+      if (!model) {
+        model = createWorkerAvatar(COLORS[other.color]);
+        const name = label(other.name, COLORS[other.color]);
+        name.position.y = 2.05;
+        name.name = 'worker-name';
+        model.add(name);
+        model.position.set(other.x * S, 0, other.y * S);
+        scene.add(model);
+        people.set(other.id, model);
+      }
+      const local = other.id === myId;
+      model.visible =
+        !options.menu &&
+        (!local || (rs.view === 'third' && localAvatarVisible));
+      const name = model.getObjectByName('worker-name');
+      if (name) name.visible = !local;
+      if (local) model.position.set(camX, 0, camZ);
+      else
         model.position.lerp(
           new T.Vector3(other.x * S, 0, other.y * S),
           1 - Math.exp(-dt * 12),
         );
-        const previous = model.userData.walkPosition as T.Vector3 | undefined;
-        const speed = previous
-          ? Math.min(3, model.position.distanceTo(previous) / dt)
-          : 0;
-        model.userData.walkPosition = model.position.clone();
-        model.userData.stride = (model.userData.stride ?? 0) + speed * dt * 7;
-        const stride =
-          Math.sin(model.userData.stride) * Math.min(0.48, speed * 0.2);
-        model.getObjectByName('leg-left')!.rotation.x = stride;
-        model.getObjectByName('leg-right')!.rotation.x = -stride;
-        model.getObjectByName('arm-left')!.rotation.x = -stride * 0.65;
-        model.getObjectByName('arm-right')!.rotation.x = other.working
-          ? Math.sin(t * 0.01) * 0.22
-          : stride * 0.65;
-        model.rotation.y = Math.PI / 2 - other.face;
-        model.scale.y = other.crouched ? 0.68 : 1;
+      const previous = model.userData.walkPosition as T.Vector3 | undefined;
+      const speed = previous
+        ? Math.min(4.5, model.position.distanceTo(previous) / dt)
+        : 0;
+      model.userData.walkPosition = model.position.clone();
+      model.rotation.y = local ? Math.PI + look.yaw : Math.PI / 2 - other.face;
+      const workerTask = local ? options.task : taskAt(g, other);
+      animateWorkerAvatar(model, {
+        dt,
+        time: t / 1000,
+        speed,
+        crouched: other.crouched,
+        working: other.working && !!workerTask,
+        tool: other.tool,
+        pushing: !!other.pushing,
+        bag: other.bag,
+        mask: other.mask > 0,
+        taskKind: workerTask?.kind,
       });
+    });
     zoneLabels.forEach((pair, i) => {
       const clean = g.zones[i]?.completedAt !== null;
       pair[0].visible = !options.menu && !clean;
@@ -2003,7 +1961,7 @@ export function createFirstPersonScene(
         : 0;
     renderer.autoClear = true;
     renderer.render(scene, camera);
-    if (p && !options.menu) {
+    if (p && !options.menu && rs.view === 'first') {
       renderer.autoClear = false;
       renderer.clearDepth();
       renderer.render(viewScene, viewCamera);

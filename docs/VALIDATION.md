@@ -1,3 +1,5 @@
+Bản camera mới 0.6: xem `THIRD-PERSON-0.6.md`. Các số liệu dưới đây lưu kết quả đợt 0.4; hình ảnh 0.5 ở `VISUAL-PREVIEW-0.5.md`.
+
 # Kiểm chứng 0.4 — 18/10/2026 (Asia/Saigon)
 
 Môi trường Linux cloud, Node v24.19.0, pnpm 11.25.0, Chromium/Playwright và D1 local qua Wrangler. Không gọi ghi dữ liệu vào Site production.

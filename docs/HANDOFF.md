@@ -1,3 +1,11 @@
+# Camera và nhân vật 0.6
+
+Người dùng đã yêu cầu đổi sang góc thứ ba mặc định và giữ V để so sánh góc thứ nhất. `lib/follow-camera.ts` thu bounds của vật cản tĩnh trước khi batch; lưới không gian và khoảng đệm 0,22 m tránh raycast cả phố mỗi frame. Camera thu ngay trước vật cản và hồi khoảng cách dần, hạ điểm theo khi cúi. Foliage instanced/đồ vật động không thuộc tập tránh camera. Khi không đủ chỗ, ẩn thân local để không che màn hình.
+
+`lib/worker-avatar.ts` tạo rig toàn thân, tay bám cán, chân/gối/khuỷu, dụng cụ đúng loại/tải, tư thế làm việc/đẩy xe. Cả local và đồng đội dùng cùng rig; pose lấy từ trạng thái game, không ghi ngược. Mỗi avatar có vật liệu riêng và được dispose khi rời. Góc thứ nhất vẫn dùng viewScene với chổi/xẻng/tay trước mặt.
+
+`Settings.view` chỉ lưu local (`third` mặc định cho máy mới hoặc settings cũ thiếu trường này); không đưa vào protocol/phòng. Chuột quay hướng nhân vật ở cả hai chế độ. C tiếp tục ép pitch input xuống như luật cũ, nhưng không ép camera thứ ba chúc xuống. V không tiêu thụ thao tác C/E/Q đang giữ. Xem `THIRD-PERSON-0.6.md` cho kiểm chứng và giới hạn, `PREVIEW.md` cho deployment.
+
 # Đợt hình ảnh 0.5
 
 Gameplay và API vẫn ở định dạng 4. `lib/street-materials.ts` tạo bộ bản đồ PBR dùng chung; `public/textures/hanoi-surfaces.webp` là atlas màu mới, nguồn ở `ASSETS.md`. `lib/street-detail.ts` dựng thêm chi tiết mặt tiền và đèn đường. `lib/scene3d.ts` giữ camera/dụng cụ/giao tiếp render cũ, đổi ánh sáng đêm và mô hình hiển thị; cấu hình cao dùng tối đa bốn đèn chiếu gần camera cùng bóng directional, cấu hình thấp bỏ đèn động và bóng, giữ ánh sáng mềm có sẵn. Các light pool là xấp xỉ mỹ thuật, không phải phản xạ hình học thực. Batch có xử lý cả geometry indexed/non-indexed; props cực nhỏ không bo góc nhiều đỉnh. Giữ Site production, cập nhật Site preview riêng theo `PREVIEW.md`.

@@ -3,8 +3,8 @@
 Read `README.md`, `docs/HANDOFF.md`, and `docs/ROADMAP-0.4.md` first.
 
 ## Product
-- Existing 0.5 visual preview over the 0.4 first-person 3D sanitation worker co-op prototype inspired by Hanoi. Read `docs/VISUAL-PREVIEW-0.5.md` for the visual pass and its verification limits.
-- Preserve first-person view, broom/scoop, crouching, cart transport, flood/drain work, solo and 1–8-player rooms.
+- Existing 0.6 third-person preview over the 0.5 Hanoi night-street visual pass and 0.4 co-op gameplay. Read `docs/THIRD-PERSON-0.6.md` and `docs/VISUAL-PREVIEW-0.5.md` for changes and verification limits.
+- Third-person is the authorized default; V switches to the retained first-person view. Preserve both modes, broom/scoop, crouching, cart transport, flood/drain work, solo and 1–8-player rooms. Camera/worker animation is cosmetic: task reach and rules stay in lib/game.ts.
 - Develop the current game; do not replace it with a new template, 2D game, Telegram game, or concept image.
 - UI language: Vietnamese. Desktop keyboard and mouse are the main target; preserve available touch controls.
 

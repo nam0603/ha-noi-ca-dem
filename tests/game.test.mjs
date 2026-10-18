@@ -450,15 +450,191 @@ test('API rejects invalid origins, IDs, payloads and unknown rooms', async () =>
     400,
   );
 });
+compile('lib/follow-camera.ts', 'follow-camera.mjs');
+compile('lib/worker-avatar.ts', 'worker-avatar.mjs');
 compile('lib/street-materials.ts', 'street-materials.mjs');
 compile('lib/street-detail.ts', 'street-detail.mjs');
 compile('lib/scene3d.ts', 'scene3d.mjs', (s) =>
   s.replace(
-    /(['"])\.\/(game|street-materials|street-detail)\1/gu,
+    /(['"])\.\/(game|street-materials|street-detail|follow-camera|worker-avatar)\1/gu,
     (_, _quote, name) => `'./${name}.mjs'`,
   ),
 );
 const { createWorld } = await import(path.join(temp, 'scene3d.mjs'));
+const { createCameraCollision, createFollowCamera } = await import(
+  path.join(temp, 'follow-camera.mjs')
+);
+test('follow camera retracts before walls and overhangs, recovers gradually and never aims backwards', () => {
+  const root = new THREE.Group();
+  const wall = new THREE.Mesh(
+    new THREE.BoxGeometry(5, 4, 0.2),
+    new THREE.MeshBasicMaterial(),
+  );
+  wall.position.set(0, 2, 2);
+  root.add(wall);
+  const collision = createCameraCollision(root),
+    follow = createFollowCamera(collision);
+  const camera = new THREE.PerspectiveCamera(76, 1.6, 0.04, 130);
+  const position = new THREE.Vector3();
+  const open = follow.update(camera, position, Math.PI, 0, false, 0.016);
+  assert(open.distance > 3);
+  const blocked = follow.update(camera, position, 0, 0, false, 0.016);
+  assert(
+    blocked.distance < 1.75,
+    'same-frame retraction keeps the near plane off a wall',
+  );
+  assert(camera.position.z < 1.68);
+  const recovering = follow.update(camera, position, Math.PI, 0, false, 0.016);
+  assert(
+    recovering.distance > blocked.distance &&
+      recovering.distance < open.distance,
+  );
+  for (let i = 0; i < 120; i++)
+    follow.update(camera, position, Math.PI, 0, false, 0.016);
+  assert(camera.position.distanceTo(new THREE.Vector3(0, 1.24, 0)) > 3);
+  // A transformed roof: collision bounds are captured in world space before batching.
+  const roofRoot = new THREE.Group(),
+    roof = new THREE.Mesh(
+      new THREE.BoxGeometry(5, 0.12, 5),
+      new THREE.MeshBasicMaterial(),
+    );
+  roofRoot.position.set(10, 0, 0);
+  roof.position.y = 2.5;
+  roofRoot.add(roof);
+  const underRoof = createFollowCamera(createCameraCollision(roofRoot));
+  underRoof.update(camera, new THREE.Vector3(10, 0, 0), 0, -0.7, false, 0.016);
+  assert(
+    camera.position.y < 2.23,
+    'camera cannot cross the underside of a canopy',
+  );
+  const solid = follow.update(
+    camera,
+    new THREE.Vector3(0, 0, 2),
+    0,
+    0,
+    false,
+    0.016,
+  );
+  assert.equal(solid.distance, 0);
+  assert.equal(solid.avatarVisible, false);
+  const direction = camera.getWorldDirection(new THREE.Vector3());
+  assert(direction.z < 0, 'occlusion never flips the player look direction');
+  for (const pitch of [-1.35, 0, 1.35]) {
+    underRoof.reset();
+    underRoof.update(camera, position, 0, pitch, true, 0.016);
+    assert(camera.position.y >= 0.32 - 1e-6);
+    assert(camera.position.toArray().every(Number.isFinite));
+  }
+});
+const { createWorkerAvatar, animateWorkerAvatar } = await import(
+  path.join(temp, 'worker-avatar.mjs')
+);
+test('full-body worker keeps grips attached, crouches with grounded boots and bounds cosmetic load', () => {
+  const model = createWorkerAvatar('#517b65');
+  model.position.set(12, 0, 7);
+  model.rotation.y = 0.8;
+  const base = {
+    dt: 0.016,
+    time: 1.2,
+    speed: 0,
+    crouched: false,
+    working: false,
+    tool: 'broom',
+    pushing: false,
+    bag: 0,
+    mask: false,
+  };
+  const part = (name) => {
+    const object = model.getObjectByName(name);
+    assert(object, name);
+    return object;
+  };
+  animateWorkerAvatar(model, base);
+  const torsoY = part('worker-torso').position.y;
+  const bootY = part('worker-boot-left').position.y;
+  let meshes = 0,
+    vertices = 0;
+  model.traverse((o) => {
+    if (o instanceof THREE.Mesh) {
+      meshes++;
+      vertices += o.geometry.attributes.position.count;
+    }
+  });
+  assert(meshes < 35 && vertices < 20000, 'bounded per-player render rig');
+  const poses = [
+    base,
+    { ...base, speed: 3 },
+    { ...base, crouched: true, working: true },
+    { ...base, tool: 'scoop', working: true, bag: 8 },
+    { ...base, taskKind: 'cart', working: true, bag: 18 },
+    { ...base, pushing: true, speed: 1 },
+    { ...base, mask: true, bag: 99 },
+  ];
+  for (const pose of poses) {
+    animateWorkerAvatar(model, pose);
+    model.updateMatrixWorld(true);
+    const matrices = [];
+    model.traverse((o) => {
+      assert(o.matrixWorld.elements.every(Number.isFinite));
+      matrices.push([...o.matrixWorld.elements]);
+    });
+    animateWorkerAvatar(model, pose);
+    model.updateMatrixWorld(true);
+    const repeated = [];
+    model.traverse((o) => repeated.push([...o.matrixWorld.elements]));
+    assert.deepEqual(
+      repeated,
+      matrices,
+      'absolute poses never accumulate drift',
+    );
+    assert.deepEqual(model.position.toArray(), [12, 0, 7]);
+    assert.equal(
+      model.rotation.y,
+      0.8,
+      'animation cannot move or aim the authoritative player',
+    );
+    if (!pose.pushing) {
+      const tool = part(
+        pose.taskKind === 'cart' || pose.tool === 'scoop'
+          ? 'worker-scoop'
+          : 'worker-broom',
+      );
+      const start = tool.localToWorld(new THREE.Vector3(0, 0, 0)),
+        end = tool.localToWorld(new THREE.Vector3(0, 1.2, 0));
+      const shaft = new THREE.Line3(start, end);
+      for (const side of ['left', 'right']) {
+        const hand = part('worker-hand-' + side).getWorldPosition(
+          new THREE.Vector3(),
+        );
+        assert(
+          shaft
+            .closestPointToPoint(hand, true, new THREE.Vector3())
+            .distanceTo(hand) < 0.001,
+          'hands stay on the animated shaft',
+        );
+      }
+    }
+  }
+  animateWorkerAvatar(model, { ...base, crouched: true });
+  assert(part('worker-torso').position.y < torsoY - 0.2);
+  assert.equal(
+    part('worker-boot-left').position.y,
+    bootY,
+    'crouch bends joints instead of scaling feet below ground',
+  );
+  animateWorkerAvatar(model, { ...base, tool: 'scoop', bag: -1 });
+  assert.equal(part('worker-scoop-load').count, 0);
+  animateWorkerAvatar(model, { ...base, tool: 'scoop', bag: 99, mask: true });
+  assert.equal(part('worker-scoop-load').count, 18);
+  assert(part('worker-mask').visible);
+  animateWorkerAvatar(model, { ...base, pushing: true });
+  assert(!part('worker-broom').visible && !part('worker-scoop').visible);
+  assert.equal(
+    part('worker-hand-left').position.z,
+    0.45,
+    'push grips match the cart handle behind its centre',
+  );
+});
 test('3D environment constructs valid geometry, camera street view is unobstructed and ground is present', () => {
   const geometryErrors = [];
   const originalError = console.error;
@@ -474,7 +650,33 @@ test('3D environment constructs valid geometry, camera street view is unobstruct
     [],
     'static batching must not drop incompatible geometry',
   );
-  const { scene, lighting, surfaces } = world;
+  const { scene, lighting, surfaces, cameraCollision } = world;
+  assert(cameraCollision.count > 100);
+  const follow = createFollowCamera(cameraCollision),
+    followView = new THREE.PerspectiveCamera();
+  for (const [x, z] of [
+    [19, 36.5],
+    [6, 29.3],
+    [12, 11.8],
+    [21, 24],
+  ]) {
+    for (let yaw = 0; yaw < Math.PI * 2; yaw += Math.PI / 4) {
+      follow.reset();
+      follow.update(
+        followView,
+        new THREE.Vector3(x, 0, z),
+        yaw,
+        -0.3,
+        false,
+        0.016,
+      );
+      const anchor = new THREE.Vector3(x, 1.24, z);
+      assert(
+        cameraCollision.fraction(anchor, followView.position) > 0.999,
+        'built-street camera segment stays outside solids',
+      );
+    }
+  }
   assert.equal(
     lighting.lights.length,
     4,

@@ -76,6 +76,7 @@ type Mode = 'menu' | 'solo' | 'online';
 type Panel = 'none' | 'pause' | 'help' | 'settings';
 const initialSettings: Settings = {
   quality: 'high',
+  view: 'third',
   sensitivity: 1,
   motion: false,
   fov: 76,
@@ -325,6 +326,7 @@ export default function GameClient() {
       if (saved) {
         const valid: Settings = {
           quality: saved.quality === 'low' ? 'low' : 'high',
+          view: saved.view === 'first' ? 'first' : 'third',
           sensitivity: Math.max(
             0.3,
             Math.min(2, Number(saved.sensitivity) || 1),
@@ -423,9 +425,10 @@ export default function GameClient() {
             session.current.id,
             {
               yaw: look.current.yaw,
-              pitch: inp.crouch
-                ? Math.min(look.current.pitch, -0.6)
-                : look.current.pitch,
+              pitch:
+                sref.current.view === 'first' && inp.crouch
+                  ? Math.min(look.current.pitch, -0.6)
+                  : look.current.pitch,
             },
             t,
             {
@@ -517,6 +520,11 @@ export default function GameClient() {
         return;
       }
       if (pref.current !== 'none') return;
+      if (k === 'v' && !e.repeat) {
+        e.preventDefault();
+        setOption({ view: sref.current.view === 'third' ? 'first' : 'third' });
+        return;
+      }
       if (
         [
           ' ',
@@ -798,7 +806,11 @@ export default function GameClient() {
       <canvas
         ref={canvas}
         className="world-canvas"
-        aria-label="Phố Hà Nội 3D, góc nhìn thứ nhất"
+        aria-label={
+          settings.view === 'third'
+            ? 'Phố Hà Nội 3D, góc nhìn thứ ba'
+            : 'Phố Hà Nội 3D, góc nhìn thứ nhất'
+        }
         onContextMenu={(e) => e.preventDefault()}
         onMouseDown={(e) => {
           if (!playing || pref.current !== 'none') return;
@@ -860,9 +872,9 @@ export default function GameClient() {
             HÀ NỘI <b>CA ĐÊM</b>
           </span>
           <small>
-            FIRST PERSON
+            {settings.view === 'third' ? 'THIRD PERSON' : 'FIRST PERSON'}
             <br />
-            PHỐ ĐÊM · 05
+            THEO BƯỚC · 06
           </small>
         </button>
         {playing && (
@@ -910,7 +922,11 @@ export default function GameClient() {
               Thành phố đang chờ những đôi tay.
             </p>
             <div className="perspective-tag">
-              <Eye size={15} /> 3D · GÓC NHÌN THỨ NHẤT
+              <Eye size={15} /> 3D ·{' '}
+              {settings.view === 'third'
+                ? 'GÓC NHÌN THỨ BA'
+                : 'GÓC NHÌN THỨ NHẤT'}{' '}
+              · V ĐỔI GÓC
             </div>
             <div className="chapter-picker">
               {choices.map((c) => (
@@ -1110,7 +1126,10 @@ export default function GameClient() {
             <i>→</i>
             <span className={game.score > 0 ? 'done' : ''}>4 · TẬP KẾT</span>
           </div>
-          <div className={'reticle ' + (task ? 'targeted' : '')}>
+          <div
+            className={'reticle ' + (task ? 'targeted' : '')}
+            hidden={settings.view === 'third'}
+          >
             <i />
           </div>
           {p && (
@@ -1213,8 +1232,9 @@ export default function GameClient() {
                 </div>
               )}
               <div className="micro-help">
-                WASD di chuyển <i /> C cúi <i /> 1 chổi · 2 xẻng <i /> Q đẩy /
-                buông xe <i /> F khẩu trang <i /> G gọi giúp <i /> Esc nghỉ
+                WASD di chuyển <i /> V đổi góc <i /> C cúi <i /> 1 chổi · 2 xẻng{' '}
+                <i /> Q đẩy / buông xe <i /> F khẩu trang <i /> G gọi giúp <i />{' '}
+                Esc nghỉ
               </div>
             </div>
           )}
@@ -1424,6 +1444,15 @@ export default function GameClient() {
               <button onClick={() => (pending.current.ping = true)}>
                 GỌI GIÚP
               </button>
+              <button
+                onClick={() =>
+                  setOption({
+                    view: sref.current.view === 'third' ? 'first' : 'third',
+                  })
+                }
+              >
+                GÓC NHÌN
+              </button>
               <button {...touchControl('crouch', true)}>CÚI</button>
               <button onClick={() => (pending.current.grab = true)}>XE</button>
               <button {...touchControl('work', true)}>DỌN</button>
@@ -1627,6 +1656,23 @@ export default function GameClient() {
               <>
                 <div className="overline">CẢM GIÁC CỦA BẠN</div>
                 <h2>Nhìn phố theo ý mình.</h2>
+                <label className="setting-label">CAMERA · V ĐỔI NHANH</label>
+                <div className="segmented" aria-label="Chế độ camera">
+                  <button
+                    className={settings.view === 'third' ? 'selected' : ''}
+                    aria-pressed={settings.view === 'third'}
+                    onClick={() => setOption({ view: 'third' })}
+                  >
+                    Góc nhìn thứ ba
+                  </button>
+                  <button
+                    className={settings.view === 'first' ? 'selected' : ''}
+                    aria-pressed={settings.view === 'first'}
+                    onClick={() => setOption({ view: 'first' })}
+                  >
+                    Góc nhìn thứ nhất
+                  </button>
+                </div>
                 <label className="setting-label">
                   ĐỘ NHẠY CHUỘT <b>{settings.sensitivity.toFixed(1)}</b>
                 </label>
@@ -1691,7 +1737,9 @@ export default function GameClient() {
                   <div>
                     <b>01 · NHÌN & ĐI</b>
                     <p>
-                      Di chuột để quan sát, WASD để đi, Shift để chạy. Nhấn Esc
+                      Mặc định nhìn sau vai nhân vật. V đổi góc thứ nhất/thứ ba.
+                      Di chuột để quay hướng nhân vật, WASD để đi, Shift để
+                      chạy. Vòng sáng dưới đất chỉ việc trong tầm tay. Nhấn Esc
                       để thả chuột. Nếu không khóa được chuột, giữ chuột phải và
                       kéo để nhìn.
                     </p>
@@ -1780,7 +1828,7 @@ export default function GameClient() {
         </span>
         <span>
           {mode === 'online' ? `${ping} MS · ` : ''}
-          {fps} FPS <i /> PHỐ ĐÊM · VISUAL PREVIEW 0.5
+          {fps} FPS <i /> THEO BƯỚC · PREVIEW 0.6
         </span>
       </footer>
     </div>

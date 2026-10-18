@@ -138,6 +138,14 @@ let launchedBrowser;
     code,
     states.map((g) => g.players.map((p) => p.name)),
   );
+  // Camera stays local: one room can mix first/third-person clients.
+  await a.keyboard.press('v');
+  await a.waitForFunction(
+    () => JSON.parse(localStorage.getItem('ca-dem-settings')).view === 'first',
+  );
+  assert.equal(await a.locator('.reticle').evaluate((el) => el.hidden), false);
+  assert.equal(await b.locator('.reticle').evaluate((el) => el.hidden), true);
+  console.log('mixed first/third-person cameras in the same room');
   const baseTotal =
     states[0].leaves.length +
     states[0].piles.reduce((n, p) => n + p.amount, 0) +

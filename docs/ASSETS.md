@@ -21,3 +21,7 @@ Các bản đồ procedural là tài nguyên mỹ thuật gốc tạo bằng sou
 `lib/street-detail.ts` dựng hình học gốc cho xe máy đỗ, quầy đồ ăn, kệ hàng, bảng menu, giàn nóng điều hòa, lan can và đèn đường. Dụng cụ, găng tay và nhân vật đồng đội dùng geometry gốc trong `lib/scene3d.ts`. Không lấy model, texture hay hình ảnh từ Long Quân Trở Lại; video người dùng gửi chỉ là tham chiếu về tỷ lệ, bối cảnh và mật độ chi tiết.
 
 Ánh sáng có đèn chiếu xuống đường, môi trường phản xạ đêm tổng hợp và mảng sáng mềm dựng sẵn. Vũng ẩm dùng vật liệu có độ nhám thấp; không có screen-space reflection hay ray tracing. Bầu trời và bề mặt này không thay cho geometry 3D có thể đi lại.
+
+## Nhân vật 0.6
+
+`lib/worker-avatar.ts`: geometry và rig/hoạt ảnh procedural gốc được viết cho game, vertex-color vật liệu nội bộ; không tải model, motion capture hoặc asset từ game trong video. `lib/follow-camera.ts` chỉ xử lý hiển thị. Không thêm file tài nguyên bên ngoài.

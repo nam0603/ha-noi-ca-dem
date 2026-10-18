@@ -1,8 +1,10 @@
 # Hà Nội · Ca đêm — Codex web handoff
 
-Source hiện tại là **0.5 visual preview**, tiếp tục game 3D góc nhìn thứ nhất dọn phố Hà Nội từ bản 0.3 (source gốc `23c89fcaf37bc662eb572d97b4b06493110b82ea`). Chơi solo hoặc phòng 1–8 người qua HTTP/D1.
+Source hiện tại là **0.6 · Theo bước**, tiếp tục game 3D góc nhìn thứ ba/thứ nhất dọn phố Hà Nội từ bản 0.3 (source gốc `23c89fcaf37bc662eb572d97b4b06493110b82ea`). Chơi solo hoặc phòng 1–8 người qua HTTP/D1.
 
-Đợt hình ảnh hiện tại: **0.5 visual preview**, giữ gameplay/định dạng phòng 0.4. Phố đêm có vật liệu bề mặt riêng, cửa hàng có chiều sâu, chi tiết đô thị, đèn đường, dụng cụ và nhân vật được dựng lại. Xem `docs/VISUAL-PREVIEW-0.5.md` và `docs/ASSETS.md`; đây là bản để đánh giá bằng chơi thử, chưa xác nhận độ hoàn thiện ngang video tham chiếu hay FPS trên GPU thật.
+Bản 0.6 để camera sau vai làm mặc định; **V** đổi sang góc nhìn thứ nhất. Nhân vật toàn thân có động tác đi/cúi/quét/hốt/đổ/đẩy xe, camera tự thu gần vật cản. Xem `docs/THIRD-PERSON-0.6.md`. Camera không đổi tầm tay hoặc luật tương tác.
+
+Đợt hình ảnh nền: **0.5 visual preview**, giữ gameplay/định dạng phòng 0.4. Phố đêm có vật liệu bề mặt riêng, cửa hàng có chiều sâu, chi tiết đô thị, đèn đường, dụng cụ và nhân vật được dựng lại. Xem `docs/VISUAL-PREVIEW-0.5.md` và `docs/ASSETS.md`; đây là bản để đánh giá bằng chơi thử, chưa xác nhận độ hoàn thiện ngang video tham chiếu hay FPS trên GPU thật.
 
 Demo production **0.3 giữ nguyên**: https://ha-noi-ca-dem.namxuan05.chatgpt.site
 
@@ -50,7 +52,7 @@ Nếu đã có môi trường cho game khác như `cell-rush`, hãy tạo môi t
 
 ## Điều khiển
 
-WASD/chuột: đi/nhìn; C: cúi; 1: chổi; 2: xẻng; giữ E/chuột trái: làm việc; Q: nắm/buông xe; Shift: chạy; F: khẩu trang; M: bản đồ; G: ping gọi giúp; H: trợ giúp; Esc: nghỉ/thả chuột. Khi không khóa chuột được, dùng chế độ giữ chuột phải để nhìn.
+WASD/chuột: đi/quay hướng nhân vật; V: đổi góc thứ ba/thứ nhất; C: cúi; 1: chổi; 2: xẻng; giữ E/chuột trái: làm việc; Q: nắm/buông xe; Shift: chạy; F: khẩu trang; M: bản đồ; G: ping gọi giúp; H: trợ giúp; Esc: nghỉ/thả chuột. Khi không khóa chuột được, dùng chế độ giữ chuột phải để nhìn.
 
 Vòng chơi: **quét thành đống → hốt vào túi → đổ xe → đẩy tới điểm tập kết → bàn giao**. Khi mưa, dùng xẻng thông cống để nước rút. Chơi một mình hoặc phòng tối đa tám người; ca 8 phút hoặc thư thả.
 
