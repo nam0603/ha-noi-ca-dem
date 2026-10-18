@@ -4,6 +4,8 @@ Source hiện tại là **0.4**, tiếp tục game 3D góc nhìn thứ nhất d�
 
 Demo production hiện có, **chưa được cập nhật trong tác vụ 0.4 này**: https://ha-noi-ca-dem.namxuan05.chatgpt.site
 
+**Preview chơi thử riêng:** https://ha-noi-ca-dem-preview.namxuan05.chatgpt.site — chỉ cần trình duyệt, đăng nhập tài khoản ChatGPT sở hữu Site khi được yêu cầu. Các bản sửa đã kiểm tra sẽ được cập nhật tại cùng địa chỉ này. Quy trình và phân biệt với production: `docs/PREVIEW.md`.
+
 ## Có gì trong 0.4
 
 - Chổi gom cả vùng phía trước; lá trượt và nhập đống, kiểm tra tầm tay/vật cản dùng chung client/server.

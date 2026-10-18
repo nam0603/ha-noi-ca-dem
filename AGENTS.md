@@ -25,3 +25,9 @@ Read `README.md`, `docs/HANDOFF.md`, and `docs/ROADMAP-0.4.md` first.
 - Report actual commands and results. Separate automated checks, HTTP smoke checks, browser checks and real multiplayer playtests. Never claim graphics quality, FPS, enjoyment or eight-device stability from unit tests.
 - Keep credentials, `.env*`, `.wrangler`, `.sites-runtime`, dependencies and built output out of Git.
 - `.openai/hosting.json` retains the existing Site identity for handoff. Changing GitHub code does not itself update the live demo. No production deployment or audience change is part of the migration task.
+
+## Persistent playtest preview
+- The owner authorized a separate preview and updates after completed changes. Follow `docs/PREVIEW.md` and the Sites workflow to update the same preview Site after the relevant checks pass.
+- `.openai/preview.json` identifies the preview. Keep `.openai/hosting.json` pointed at the original production Site; build/publish preview from a separate checkout with the preview identity in its manifest.
+- Preserve both audiences and keep room databases separate. Never deploy the original production Site without a separate user request.
+- Pushes to GitHub alone do not deploy preview; finish the explicit Sites publication and report its actual outcome.
