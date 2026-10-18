@@ -2,6 +2,8 @@
 
 Yêu cầu: camera thứ ba sau vai làm mặc định, V đổi góc thứ nhất/thứ ba, nhân vật/dụng cụ/động tác tương ứng, giữ vòng chơi và cập nhật cùng Site preview riêng.
 
+Đã xuất bản lên https://ha-noi-ca-dem-preview.namxuan05.chatgpt.site lúc 17:01 ngày 18/10/2026 (giờ Việt Nam). Nhãn `THEO BƯỚC · PREVIEW 0.6`; Ctrl+Shift+R để tải bản mới. Mã source/version/deployment tại `PREVIEW.md`.
+
 ## Hành vi
 
 - Camera sau vai phải, cách nhân vật khoảng 3 m. Chuột quay hướng nhân vật; WASD di chuyển theo hướng này. C cúi để dọn, không ép camera thứ ba chúc xuống. V chỉ đổi hiển thị; giữ C/E/Q hoặc dụng cụ không bị xóa khi đổi góc.

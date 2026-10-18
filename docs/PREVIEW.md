@@ -2,7 +2,7 @@
 
 Địa chỉ: https://ha-noi-ca-dem-preview.namxuan05.chatgpt.site
 
-Bản đang xuất bản: **0.5 · Phố đêm** (2026-10-18). Nhấn Ctrl+Shift+R nếu tab cũ vẫn hiện 0.4; nhãn cuối màn hình mới là `PHỐ ĐÊM · VISUAL PREVIEW 0.5`. Chọn `Cao · Có bóng` để xem đủ ánh sáng/bề mặt; chọn `Nhẹ · Không bóng` nếu máy chạy nặng. Báo cáo của đợt này: `VISUAL-PREVIEW-0.5.md`.
+Bản đang xuất bản: **0.6 · Theo bước** (18/10/2026). Nhấn Ctrl+Shift+R nếu tab cũ vẫn hiện 0.5; nhãn cuối màn hình mới là `THEO BƯỚC · PREVIEW 0.6`. Camera thứ ba là mặc định, **V** đổi sang thứ nhất hoặc đổi trong Cài đặt. Chọn `Cao · Có bóng` để xem đủ ánh sáng/bề mặt; chọn `Nhẹ · Không bóng` nếu máy chạy nặng. Báo cáo: `THIRD-PERSON-0.6.md`; đợt hình ảnh nền: `VISUAL-PREVIEW-0.5.md`.
 
 Máy chơi chỉ cần Chrome/Edge và kết nối Internet. Preview bắt đầu ở chế độ riêng tư của chủ Site; đăng nhập bằng tài khoản ChatGPT sở hữu Site khi được yêu cầu. Quyền mời bạn của bản production không tự chuyển sang preview.
 
@@ -46,3 +46,13 @@ Không thay quyền xem/chơi hoặc triển khai Site production trong quy trì
 - Dựng lại trong checkout preview với manifest riêng: test **33/33**, TypeScript và build exit0. Kiểm tra manifest nguồn/artifact khớp Site preview, file texture trong artifact có SHA256 khớp source; archive 1270420 bytes chứa Worker, client và migrations, không chứa source secrets/dependencies/runtime DB.
 - Các browser check chạy trên artifact local hoàn chỉnh đều qua: hình ảnh cao/thấp/mưa/dụng cụ, một chuyến bàn giao solo, hai phiên cùng phòng/offline/reconnect và một ca autumn thắng (score51, một khu sạch), kết quả/restart/menu. Điều kiện đo, kết quả lỗi trung gian đã sửa và các giới hạn nằm trong `VISUAL-PREVIEW-0.5.md`.
 - Không chạy browser đã đăng nhập trên URL hosted trong tác vụ này. Native deployment thành công xác nhận bản đã xuất bản, không chứng minh chất lượng hình ảnh ngang clip hoặc FPS máy thật. Không thay audience hoặc cập nhật Site production cũ.
+
+## Camera và nhân vật 0.6 — 18/10/2026
+
+- Source GitHub: `b2a6c6899e187e389da9eeb9d7e0fe09e9ae317e`, game `0.6.0-preview.1`.
+- Source Site preview: `4d8266c6d26b1f20130370c1abefabccd65957bb`; Site/URL cũ, binding D1 `DB` và quyền riêng tư của chủ Site giữ nguyên (revision1, không có external visitors).
+- Saved version **3**: `appgprj_6ad441f7c1108191b3bb10887f2bbebc~appgver_f7ddd0ac5798819196fa36878e37c93d`.
+- Deployment: `appgdep_6ad4990121f081919057dd33edf9d2af`; Sites trả **succeeded** cùng URL lúc `2026-10-18T10:01:53.196425+00:00` (**17:01:53, giờ Việt Nam**).
+- Dựng lại trong checkout preview: `npm test` **35/35**, TypeScript và build exit0. Manifest nguồn/artifact đúng preview, atlas texture khớp source; archive 1277770 bytes/97 entries, SHA256 `bdc123bf015109e7ec40d9c2e252fb337f5335140a1ddce6872120679d9a2a14`. Worker/client/migrations đi cùng một source đã push, không kèm secrets/dependencies/runtime DB.
+- Browser trên artifact local cuối: third-person (V/giữ V, C/dụng cụ, settings cũ, lưu qua reload, cao/thấp/mưa), solo-trip bàn giao3 đơn vị, full-shift thắng mùa thu (score24.132, một khu sạch), co-op hai context dùng hai camera khác nhau và offline/reconnect đều qua. Không có runtime/console errors ngoài ba lỗi mạng offline dự kiến ở co-op. Điều kiện và giới hạn nằm ở `THIRD-PERSON-0.6.md`.
+- Không chạy browser đã đăng nhập trên URL hosted. Native success xác nhận publication. Đọc lại Site production: vẫn version3, access revision2, updated_at `2026-10-15T08:36:23.697175+00:00` và URL cũ; không triển khai hoặc đổi audience của production.
