@@ -70,3 +70,10 @@ Probe HTTP không GPU chạy bằng `node work/polish-07/http-network.mjs`; gi�
 Thử chia material batch theo ô 16 m làm draw API calls tại điểm đầu tăng từ khoảng 382 lên 747; đã bỏ. Phép đo sau batch/instancing: **327 calls, 170 static meshes/209.182 vertices**, baseline 382 calls, 156 meshes/214.923 vertices; cùng CSS 1280×800/DPR 0,5/low/canvas 640×400. Đây là đếm submit tại một điểm, **không phải FPS/GPU time**, không xác nhận toàn phố nhẹ hơn.
 
 Chưa có GPU thật, playtest con người, tám thiết bị qua Internet, nghe âm thanh trực tiếp hoặc ca mưa/hỗn hợp đầy đủ qua browser. Mobile mới là emulation, chưa xác nhận onboarding hay độ trễ cảm ứng trên điện thoại thật. Chưa có client prediction/WebSocket; một giây history và guard 1,5 giây vẫn cắt input chậm/cũ. Đồ họa/rig procedural chưa được xác nhận ngang clip. Không dùng số unit test, mesh hoặc draw calls để khẳng định đẹp/mượt/vui hay tám máy ổn định.
+
+
+## Xuất bản
+
+Preview riêng đã lên **0.7**, saved version **4**, deployment `appgdep_6ad6590d4cbc8191a65b69ce28ab13ca` thành công lúc 00:53:34 ngày 20/10/2026 (Asia/Saigon). Source game `87458e9`, source Site `19d0c80`; thông tin đầy đủ ở `PREVIEW.md`. Production/version/quyền giữ nguyên.
+
+HTTP smoke hosted bị session proxy chặn CONNECT 403 trước khi tới Site; chưa kiểm tra browser đã đăng nhập trên URL hosted. Không tính deployment success là xác nhận HTML/assets, chất lượng chơi hoặc FPS. Người chơi mở link preview bằng tài khoản chủ Site để thử thực tế.
