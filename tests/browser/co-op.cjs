@@ -5,6 +5,12 @@ const { chromium } = require('playwright'),
 require('fs').mkdirSync('work', { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let launchedBrowser;
+const diagnostics = { phase: 'launch', responses: [], snapshots: [] };
+const saveDiagnostics = () =>
+  fs.writeFileSync(
+    'work/browser-coop-diagnostics.json',
+    JSON.stringify(diagnostics, null, 2),
+  );
 (async () => {
   const browser = (launchedBrowser = await chromium.launch({
     executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium',
@@ -44,6 +50,7 @@ let launchedBrowser;
     errors = [],
     latency = [],
     statuses = [];
+  const previousInput = new Map();
   for (let i = 0; i < 2; i++) {
     pages[i].on('pageerror', (e) => errors.push(e.message));
     pages[i].on('console', (m) => {
@@ -54,7 +61,45 @@ let launchedBrowser;
         statuses.push(r.status());
         try {
           const d = await r.json();
-          if (d.game) states[i] = d.game;
+          const request = r.request().postDataJSON();
+          if (d.game) {
+            states[i] = d.game;
+            diagnostics.snapshots[i] = d.game;
+          }
+          const player = d.game?.players.find((p) => p.id === request.id);
+          const previous = previousInput.get(request.id);
+          if (request.action === 'input') {
+            diagnostics.responses.push({
+              phase: diagnostics.phase,
+              context: i,
+              receivedAt: Date.now(),
+              status: r.status(),
+              inputSeq: request.seq,
+              serverSeq: player?.seq,
+              serverLastInput: player?.lastInput,
+              serverGapMs:
+                player && previous && player.seq > previous.seq
+                  ? player.lastInput - previous.lastInput
+                  : undefined,
+              frames: request.frames?.map(({ dt, input }) => ({
+                dt,
+                x: input.x,
+                y: input.y,
+                work: input.work,
+                crouch: input.crouch,
+                tool: input.tool,
+                ping: input.ping,
+                grab: input.grab,
+              })),
+              inputPing: request.input?.ping,
+              pings: d.game?.pings,
+            });
+          }
+          if (player && (!previous || player.seq >= previous.seq))
+            previousInput.set(request.id, {
+              seq: player.seq,
+              lastInput: player.lastInput,
+            });
           const t = r.request().timing();
           if (t.responseEnd >= 0) latency.push(t.responseEnd);
         } catch {}
@@ -71,7 +116,13 @@ let launchedBrowser;
       { timeout: 60000 },
     );
   console.log('menus ready');
+  diagnostics.phase = 'lobby';
   await a.getByRole('button', { name: 'Mùa lá rụng' }).click();
+  await a.waitForFunction(() =>
+    document
+      .querySelector('.chapter-picker button.selected')
+      ?.textContent.includes('Mùa lá rụng'),
+  );
   await a.getByLabel('TÊN TRÊN ÁO').fill('Lan');
   await a.getByRole('button', { name: 'Tạo phòng · 1–8 người' }).click();
   await a.locator('.big-code').waitFor();
@@ -133,6 +184,10 @@ let launchedBrowser;
   await until(() =>
     states.every((g) => g?.round === 1 && g.status === 'playing'),
   );
+  assert(
+    states.every((game) => game.season === 'autumn'),
+    'The timed-spawn conservation fixture must actually be autumn',
+  );
   console.log(
     'joined/start',
     code,
@@ -151,6 +206,7 @@ let launchedBrowser;
     states[0].piles.reduce((n, p) => n + p.amount, 0) +
     states[0].players.reduce((n, p) => n + p.bag, 0);
   const initial = baseTotal - Math.floor(states[0].time / 2.8);
+  diagnostics.phase = 'sweep';
   await Promise.all(pages.map((p) => keys(p, ['c', 'e'])));
   await until(() => states[0].players.some((p) => p.swept > 0));
   await Promise.all(pages.map((p) => keys(p, [], ['e'])));
@@ -158,9 +214,11 @@ let launchedBrowser;
     'joint sweep',
     states[0].players.map((p) => [p.name, p.swept]),
   );
+  diagnostics.phase = 'scoop';
   await Promise.all(pages.map((p) => keys(p, ['2', 'c', 'e'])));
   await until(() => states[0].players.some((p) => p.bag > 0));
   await Promise.all(pages.map((p) => keys(p, [], ['e', 'c', '2'])));
+  diagnostics.phase = 'ping';
   await keys(a, ['g']);
   await keys(a, [], ['g']);
   await until(() => states.every((g) => g.pings.length === 1));
@@ -184,13 +242,13 @@ let launchedBrowser;
     'trash mass differs from initial + timed spawns',
   );
   assert(states[0].players.every((p) => p.bag <= 18));
-  await a.screenshot({ path: 'work/co-op-host.png' });
-  await b.screenshot({ path: 'work/co-op-guest.png' });
+  diagnostics.phase = 'cart';
   // Force a real network failure in one context; the other keeps receiving snapshots.
   await keys(a, ['q']);
   await keys(a, [], ['q']);
   await until(() => !!states[0].players[0].pushing);
   await contexts[0].setOffline(true);
+  diagnostics.phase = 'offline';
   const offlineAt = Date.now();
   const beforeOffline = states[0].players[0].seq;
   await sleep(4100);
@@ -202,6 +260,7 @@ let launchedBrowser;
   await until(() => states[1].carts[0].owner === null, 15000);
   const releaseObservedAfterOfflineMs = Date.now() - offlineAt;
   await contexts[0].setOffline(false);
+  diagnostics.phase = 'reconnect';
   await until(() => states[0]?.players[0].seq > beforeOffline);
   await a.waitForFunction(
     () =>
@@ -210,6 +269,10 @@ let launchedBrowser;
         .innerText.includes('Đang nối lại'),
   );
   console.log('disconnect/reconnect passed');
+  // Capture after interaction assertions: software-GPU readback can stall input
+  // long enough to deliberately trigger the server's stale-packet guard.
+  await a.screenshot({ path: 'work/co-op-host.png' });
+  await b.screenshot({ path: 'work/co-op-guest.png' });
   const runtimeErrors = errors.filter(
     (e) =>
       !e.includes('ERR_INTERNET_DISCONNECTED') &&
@@ -220,6 +283,7 @@ let launchedBrowser;
   const result = {
     room: code,
     contexts: 2,
+    season: states[0].season,
     quality: 'low',
     viewport: '640x480; DPR 0.25 (160x120 canvas)',
     apiStatuses: [...new Set(statuses)],
@@ -243,9 +307,13 @@ let launchedBrowser;
     JSON.stringify(result, null, 2),
   );
   console.log('PASS', JSON.stringify(result));
+  diagnostics.phase = 'passed';
+  saveDiagnostics();
   await browser.close();
 })().catch(async (e) => {
   console.error(e);
+  diagnostics.error = e.stack || e.message;
+  saveDiagnostics();
   await launchedBrowser?.close();
   process.exitCode = 1;
 });

@@ -5,10 +5,14 @@ import {
   startGame,
   tickWorld,
   applyInput,
+  applyInputBatch,
+  INPUT_HISTORY_FRAMES,
+  INPUT_HISTORY_SECONDS,
   releaseOrphanCarts,
   removePlayers,
   type Game,
   type Input,
+  type InputFrame,
   type Season,
 } from '@/lib/game';
 export const dynamic = 'force-dynamic';
@@ -28,9 +32,11 @@ export async function POST(req: Request) {
         503,
       );
     const raw = await req.text();
-    if (raw.length > 2500) return reply({ error: 'Yêu cầu quá lớn.' }, 400);
+    if (raw.length > 12000) return reply({ error: 'Yêu cầu quá lớn.' }, 400);
     const body = JSON.parse(raw);
     const { action, id, token } = body;
+    if (raw.length > 2500 && !(action === 'input' && body.frames !== undefined))
+      return reply({ error: 'Yêu cầu quá lớn.' }, 400);
     if (typeof token !== 'string' || !/^[a-zA-Z0-9-]{32,80}$/.test(token))
       return reply({ error: 'Phiên chơi không hợp lệ.' }, 400);
     if (typeof id !== 'string' || !/^[a-zA-Z0-9-]{16,80}$/.test(id))
@@ -130,12 +136,11 @@ export async function POST(req: Request) {
           if (g.host === id) g.host = g.players[0]?.id ?? '';
           releaseOrphanCarts(g);
         } else if (action === 'input') {
-          const v = body.input ?? {};
           const n = (v: unknown) =>
             typeof v === 'number' && Number.isFinite(v)
               ? Math.max(-1, Math.min(1, v))
               : 0;
-          const input: Input = {
+          const readInput = (v: Record<string, unknown>): Input => ({
             x: n(v.x),
             y: n(v.y),
             work: v.work === true,
@@ -153,10 +158,59 @@ export async function POST(req: Request) {
               typeof v.pitch === 'number' && Number.isFinite(v.pitch)
                 ? Math.max(-1.4, Math.min(1.1, v.pitch))
                 : undefined,
-          };
+          });
+          const input = readInput(body.input ?? {});
           if (!Number.isSafeInteger(body.seq) || body.seq < 0)
             return reply({ error: 'Nhịp cập nhật không hợp lệ.' }, 400);
-          applyInput(g, id, input, now, body.seq);
+          if (body.frames !== undefined) {
+            if (
+              !Array.isArray(body.frames) ||
+              body.frames.length > INPUT_HISTORY_FRAMES
+            )
+              return reply({ error: 'Lịch sử thao tác không hợp lệ.' }, 400);
+            const frames: InputFrame[] = [];
+            let duration = 0;
+            for (const frame of body.frames) {
+              if (
+                !frame ||
+                typeof frame.dt !== 'number' ||
+                !Number.isFinite(frame.dt) ||
+                frame.dt < 0 ||
+                frame.dt > INPUT_HISTORY_SECONDS + 1e-6 ||
+                !frame.input ||
+                typeof frame.input !== 'object' ||
+                Array.isArray(frame.input)
+              )
+                return reply({ error: 'Lịch sử thao tác không hợp lệ.' }, 400);
+              const dt = Math.min(frame.dt, INPUT_HISTORY_SECONDS);
+              duration += dt;
+              frames.push({ input: readInput(frame.input), dt });
+            }
+            if (duration > INPUT_HISTORY_SECONDS + 1e-6)
+              return reply({ error: 'Lịch sử thao tác quá dài.' }, 400);
+            applyInputBatch(
+              g,
+              id,
+              frames.length
+                ? frames
+                : [
+                    {
+                      input: {
+                        ...input,
+                        x: 0,
+                        y: 0,
+                        work: false,
+                        grab: false,
+                        mask: false,
+                        ping: false,
+                      },
+                      dt: 0,
+                    },
+                  ],
+              now,
+              body.seq,
+            );
+          } else applyInput(g, id, input, now, body.seq);
         } else if (action !== 'poll')
           return reply({ error: 'Thao tác không hợp lệ.' }, 400);
       }

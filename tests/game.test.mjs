@@ -16,7 +16,14 @@ function compile(src, dst, transform = (s) => s) {
   }).outputText;
   fs.writeFileSync(path.join(temp, dst), js);
 }
-compile('lib/game.ts', 'game.mjs');
+compile('lib/street-colliders.ts', 'street-colliders.mjs');
+compile('lib/view-controls.ts', 'view-controls.mjs');
+compile('lib/game.ts', 'game.mjs', (s) =>
+  s.replace(/(['"])\.\/street-colliders\1/gu, "'./street-colliders.mjs'"),
+);
+compile('lib/input-sync.ts', 'input-sync.mjs', (s) =>
+  s.replace(/(['"])\.\/game\1/gu, "'./game.mjs'"),
+);
 const {
   newGame,
   joinGame,
@@ -24,6 +31,7 @@ const {
   tickWorld,
   movePlayer,
   applyInput,
+  applyInputBatch,
   rainy,
   walkable,
   waterDepth,
@@ -40,9 +48,21 @@ const {
   pingAt,
   onboardingHint,
   clearPath,
+  clearMovementPath,
+  repairStaticPropOverlaps,
   DEPOTS,
   CART_CAPACITY,
 } = await import(path.join(temp, 'game.mjs'));
+const { createInputHistory, nextInputSequence } = await import(
+  path.join(temp, 'input-sync.mjs')
+);
+const { clampViewPitch } = await import(path.join(temp, 'view-controls.mjs'));
+const {
+  STATIC_PROP_COLLIDERS,
+  INSTRUCTION_BOARD,
+  PARKED_SCOOTERS,
+  CAFE_TABLES,
+} = await import(path.join(temp, 'street-colliders.mjs'));
 const no = {
   x: 0,
   y: 0,
@@ -68,6 +88,12 @@ function leafSetup() {
   g.leaves = [{ id: 1, x: 125, y: 700, hp: 1, kind: 0 }];
   return { g, p };
 }
+const mass = (g) =>
+  g.leaves.length +
+  g.piles.reduce((n, p) => n + p.amount, 0) +
+  g.players.reduce((n, p) => n + p.bag, 0) +
+  g.carts.reduce((n, c) => n + c.stored, 0) +
+  g.score;
 test('look down, sweep into a pile, switch to scoop and collect; no automatic scoring', () => {
   const { g, p } = leafSetup();
   frames(g, p, { work: true }, 15);
@@ -329,6 +355,296 @@ test('stale sequence numbers cannot duplicate movement or grab actions', () => {
   tickWorld(g, 1500);
   assert.equal(g.lastTick, 2000);
 });
+test('trimmed input history drops zero-duration prefix edges and retains current edges', () => {
+  const { g, p } = game();
+  Object.assign(p, { x: 370, y: 700 });
+  applyInputBatch(
+    g,
+    p.id,
+    [
+      { input: { ...no, grab: true }, dt: 0 },
+      { input: no, dt: 1 },
+    ],
+    1100,
+    1,
+  );
+  assert.equal(
+    p.pushing,
+    null,
+    'an edge before the trusted elapsed window must be discarded',
+  );
+  applyInputBatch(
+    g,
+    p.id,
+    [
+      { input: no, dt: 1 },
+      { input: { ...no, grab: true }, dt: 0 },
+    ],
+    1200,
+    2,
+  );
+  assert.equal(
+    p.pushing,
+    'cart0',
+    'a zero-duration edge at the retained end still works',
+  );
+});
+test('bounded input history preserves short actions and release, and clears stale or paused work', () => {
+  const history = createInputHistory(1000);
+  history.sample({ ...no, grab: true }, 1050, true);
+  history.sample({ ...no, x: 1 }, 1100, true);
+  history.sample(no, 1150, true);
+  const frames = history.take();
+  assert.equal(frames.filter((frame) => frame.input.grab).length, 1);
+  assert(frames.some((frame) => frame.input.x === 1));
+  assert.equal(
+    frames.at(-1).input.x,
+    0,
+    'a release before the HTTP send stays represented',
+  );
+  const { g, p } = game();
+  Object.assign(p, { x: 370, y: 700 });
+  applyInputBatch(g, p.id, frames, 1150, 1);
+  assert.equal(
+    p.pushing,
+    'cart0',
+    'substeps cannot toggle a single grab more than once',
+  );
+  const after = structuredClone(g);
+  applyInputBatch(g, p.id, frames, 1150, 1);
+  assert.deepEqual(
+    g,
+    after,
+    'replaying an acknowledged packet cannot repeat its edge actions',
+  );
+  p.working = true;
+  p.crouched = true;
+  applyInputBatch(g, p.id, [], 1200, 2);
+  assert.equal(
+    p.working,
+    false,
+    'an empty history must stop the authoritative work pose',
+  );
+  assert.equal(p.crouched, false);
+  assert.equal(p.pushing, 'cart0');
+  history.sample({ ...no, work: true, x: 1 }, 1200, true);
+  history.sample({ ...no, work: true, x: 1 }, 1250, false);
+  assert.deepEqual(
+    history.take(),
+    [],
+    'opening a panel discards pending held work',
+  );
+  history.sample({ ...no, work: true, x: 1 }, 4000, true);
+  assert.deepEqual(
+    history.take(),
+    [],
+    'a stalled client cannot enqueue missing seconds',
+  );
+  history.sample({ ...no, work: true, x: 1 }, 4050, true);
+  history.clear(4060);
+  assert.deepEqual(
+    history.take(),
+    [],
+    'network errors and round/session resets can clear all old samples',
+  );
+  history.sample({ ...no, grab: true, mask: true, ping: true }, 4860, true);
+  history.sample(no, 5160, true);
+  const recent = history.take();
+  assert(
+    recent.some(
+      (frame) => frame.input.grab && frame.input.mask && frame.input.ping,
+    ),
+    'trimming an older held interval must retain a recently observed endpoint edge',
+  );
+  history.sample({ ...no, grab: true, mask: true, ping: true }, 5210, true);
+  history.sample(no, 6000, true);
+  history.sample(no, 6260, true);
+  const trimmed = history.take();
+  assert(trimmed.length > 0);
+  assert(
+    !trimmed.some(
+      (frame) => frame.input.grab || frame.input.mask || frame.input.ping,
+    ),
+    'an endpoint edge is discarded once it lies outside the retained history window',
+  );
+  for (let i = 1; i <= 100; i++)
+    history.sample(
+      { ...no, x: i % 2 ? 1 : -1, grab: i === 1 },
+      6260 + i * 50,
+      true,
+    );
+  const bounded = history.take();
+  assert(bounded.length <= 32);
+  assert(bounded.reduce((sum, frame) => sum + frame.dt, 0) <= 1 + 1e-6);
+  assert(
+    !bounded.some((frame) => frame.input.grab),
+    'trimming history cannot replay an expired edge',
+  );
+});
+
+test('delayed input packets preserve held movement and work without permitting stale catch-up or replay', () => {
+  function run(interval, input, setup) {
+    const { g, p } = leafSetup();
+    setup?.(g, p);
+    let elapsed = 0,
+      seq = 0;
+    while (elapsed < 2.36 - 1e-6) {
+      const dt = Math.min(interval, 2.36 - elapsed);
+      elapsed += dt;
+      applyInputBatch(
+        g,
+        p.id,
+        [{ input: { ...no, ...input }, dt }],
+        1000 + elapsed * 1000,
+        ++seq,
+      );
+    }
+    return { g, p };
+  }
+  const quick = run(0.11, { x: 1 }),
+    delayed = run(0.59, { x: 1 });
+  assert(Math.abs(quick.p.x - delayed.p.x) < 1e-6);
+  assert(
+    Math.abs(delayed.p.x - (100 + 72 * 2.36)) < 1e-6,
+    'a 590 ms response interval cannot reduce a valid held movement to the old 350 ms cap',
+  );
+  const fastWork = run(0.11, { work: true, crouch: true }),
+    slowWork = run(0.59, { work: true, crouch: true });
+  assert.equal(fastWork.p.swept, slowWork.p.swept);
+  assert.equal(fastWork.p.swept, 1);
+  assert.equal(mass(fastWork.g), mass(slowWork.g));
+
+  const { g, p } = leafSetup();
+  p.working = true;
+  const before = { x: p.x, y: p.y, mass: mass(g), hp: g.leaves[0].hp };
+  applyInputBatch(
+    g,
+    p.id,
+    [
+      {
+        dt: 1,
+        input: {
+          ...no,
+          x: 1,
+          work: true,
+          grab: true,
+          mask: true,
+          ping: true,
+          crouch: true,
+        },
+      },
+    ],
+    6000,
+    1,
+  );
+  assert.deepEqual(
+    { x: p.x, y: p.y, mass: mass(g), hp: g.leaves[0].hp },
+    before,
+  );
+  assert.equal(p.working, false);
+  assert.equal(p.pushing, null);
+  assert.equal(p.mask, 0);
+  assert.equal(g.pings.length, 0);
+  const x = p.x;
+  applyInputBatch(g, p.id, [{ dt: 1, input: { ...no, x: 1 } }], 6100, 2);
+  assert(
+    Math.abs(p.x - x - 7.2) < 1e-6,
+    'trusted elapsed time bounds client-reported duration',
+  );
+  const movement = p.x;
+  applyInputBatch(g, p.id, [{ dt: 1, input: { ...no, x: 1 } }], 6200, 2);
+  assert.equal(p.x, movement);
+});
+
+test('shared street props block approach but let old overlapping players walk out without teleporting', () => {
+  assert(STATIC_PROP_COLLIDERS.length >= 10);
+  for (const prop of [INSTRUCTION_BOARD, PARKED_SCOOTERS[0], CAFE_TABLES[0]])
+    assert.equal(walkable(prop.x, prop.y), false, prop.id);
+  assert.equal(clearPath({ x: 440, y: 780 }, { x: 400, y: 780 }, 10), false);
+  assert.equal(
+    clearMovementPath({ x: 440, y: 780 }, { x: 400, y: 780 }, 10),
+    false,
+  );
+  const { g, p } = game();
+  Object.assign(p, { x: 440, y: 780 });
+  movePlayer(g, p, { ...no, x: -1, sprint: true }, 0.35);
+  assert.equal(
+    p.x,
+    440,
+    'a large movement step cannot tunnel through the board',
+  );
+  Object.assign(p, { x: INSTRUCTION_BOARD.x, y: INSTRUCTION_BOARD.y });
+  assert.equal(
+    clearPath(p, { x: p.x + 20, y: p.y }, 2),
+    false,
+    'work cannot pass through the prop even for a legacy overlapping player',
+  );
+  movePlayer(g, p, { ...no, x: 1 }, 0.1);
+  assert(
+    p.x > INSTRUCTION_BOARD.x && p.x < INSTRUCTION_BOARD.x + 10,
+    'legacy overlap escape uses normal bounded movement, not a teleport',
+  );
+  for (let i = 0; i < 4; i++) movePlayer(g, p, { ...no, x: 1 }, 0.1);
+  assert(walkable(p.x, p.y));
+});
+test('legacy litter and carts embedded in new street props move outside without creating or losing trash', () => {
+  const { g, p } = game();
+  g.leaves = [
+    { id: 3001, x: 416, y: 786, hp: 0.43, kind: 2, zone: 0 },
+    { id: 3002, x: 144, y: 246, hp: 0.7, kind: 1, zone: 1 },
+    { id: 3003, x: 100, y: 100, hp: 0.2, kind: 0, zone: 2 },
+  ];
+  g.piles = [
+    { id: 3004, x: 416, y: 786, amount: 7.123, progress: 0.37, zone: 2 },
+  ];
+  Object.assign(g.carts[0], {
+    x: 416,
+    y: 780,
+    stored: 12.345,
+    owner: p.id,
+    face: 0.7,
+  });
+  p.pushing = g.carts[0].id;
+  p.bag = 2.001;
+  const beforeMass = mass(g),
+    playerPosition = [p.x, p.y];
+  const litterFields = (g) =>
+    [...g.leaves, ...g.piles].map(({ x, y, ...fields }) => fields);
+  const fields = litterFields(g);
+  tickWorld(g, g.lastTick); // Existing rooms are repaired through the ordinary shared tick.
+  assert.equal(mass(g), beforeMass);
+  assert.deepEqual(
+    litterFields(g),
+    fields,
+    'repair preserves IDs, hp, kind, zone, amount and progress',
+  );
+  assert(walkable(g.leaves[0].x, g.leaves[0].y, 2));
+  assert(walkable(g.leaves[1].x, g.leaves[1].y, 2));
+  assert.deepEqual(
+    [g.leaves[2].x, g.leaves[2].y],
+    [100, 100],
+    'an unrelated invalid building fixture is not silently relocated',
+  );
+  assert(walkable(g.piles[0].x, g.piles[0].y, 2));
+  assert(walkable(g.carts[0].x, g.carts[0].y, 15));
+  assert.equal(g.carts[0].stored, 12.345);
+  assert.equal(g.carts[0].face, 0.7);
+  assert.equal(g.carts[0].owner, null);
+  assert.equal(p.pushing, null);
+  assert.deepEqual(
+    [p.x, p.y],
+    playerPosition,
+    'the player is never teleported',
+  );
+  assert.equal(p.bag, 2.001);
+  const repaired = structuredClone(g);
+  repairStaticPropOverlaps(g);
+  assert.deepEqual(
+    g,
+    repaired,
+    'migration is idempotent after every item has an accessible position',
+  );
+});
 const sql = new DatabaseSync(':memory:');
 sql.exec(fs.readFileSync('drizzle/0000_serious_celestials.sql', 'utf8'));
 globalThis.__testEnv = {
@@ -450,13 +766,243 @@ test('API rejects invalid origins, IDs, payloads and unknown rooms', async () =>
     400,
   );
 });
-compile('lib/follow-camera.ts', 'follow-camera.mjs');
+test('same-identity rejoin resumes after acknowledged sequence and still rejects old input and round packets', async () => {
+  const made = await request(users[0], 'create', { season: 'autumn' });
+  const code = made.data.game.code;
+  const started = await request(users[0], 'start', { code });
+  const round = started.data.game.round;
+  const first = await request(users[0], 'input', {
+    code,
+    round,
+    seq: 10000,
+    input: { ...no, tool: 'broom' },
+  });
+  assert.equal(first.status, 200);
+  // A leave packet lost in transit leaves this authenticated identity in the room.
+  const rejoined = await request(users[0], 'join', { code });
+  assert.equal(rejoined.status, 200);
+  assert.equal(rejoined.data.game.players[0].seq, 10000);
+  const seq = nextInputSequence(rejoined.data.game, users[0].id, 0);
+  const fresh = await request(users[0], 'input', {
+    code,
+    round,
+    seq,
+    frames: [{ dt: 0, input: { ...no, tool: 'scoop', crouch: true } }],
+  });
+  assert.equal(fresh.status, 200);
+  assert.equal(fresh.data.game.players[0].seq, 10001);
+  assert.equal(fresh.data.game.players[0].tool, 'scoop');
+  const replay = await request(users[0], 'input', {
+    code,
+    round,
+    seq: 10000,
+    frames: [{ dt: 0, input: { ...no, tool: 'broom', grab: true } }],
+  });
+  assert.equal(replay.status, 200);
+  assert.equal(replay.data.game.players[0].tool, 'scoop');
+  assert.equal(mass(replay.data.game), mass(fresh.data.game));
+  const wrongRound = await request(users[0], 'input', {
+    code,
+    round: round - 1,
+    seq: 10002,
+    frames: [{ dt: 0.1, input: { ...no, x: 1, work: true } }],
+  });
+  assert.equal(wrongRound.status, 409);
+  assert.equal(wrongRound.data.game.players[0].seq, 10001);
+});
+
+test('fresh sampled ping, grab and mask survive a one-millisecond server budget deficit exactly once', async () => {
+  const originalNow = Date.now;
+  let now = 1800000000000;
+  Date.now = () => now;
+  try {
+    const made = await request(users[0], 'create', { season: 'autumn' });
+    const code = made.data.game.code;
+    const started = await request(users[0], 'start', { code });
+    const round = started.data.game.round;
+    const history = createInputHistory(100);
+    history.sample({ ...no, grab: true, mask: true, ping: true }, 150, true);
+    const frames = history.take();
+    now += 49;
+    const accepted = await request(users[0], 'input', {
+      code,
+      round,
+      seq: 1,
+      frames,
+    });
+    assert.equal(accepted.status, 200);
+    const g = accepted.data.game;
+    const p = g.players[0];
+    assert.equal(
+      p.pushing,
+      'cart0',
+      'the newly sampled grab is at the retained endpoint',
+    );
+    assert.equal(g.carts[0].owner, p.id);
+    assert.equal(
+      p.mask,
+      22,
+      'the fresh mask edge is not mistaken for old held input',
+    );
+    assert.equal(p.cooldown, 30);
+    assert.equal(
+      g.pings.length,
+      1,
+      'a fresh G press cannot disappear due to one millisecond of jitter',
+    );
+    const ping = structuredClone(g.pings[0]);
+    const total = mass(g);
+    now += 1;
+    const replayed = await request(users[0], 'input', {
+      code,
+      round,
+      seq: 1,
+      frames,
+    });
+    assert.equal(replayed.status, 200);
+    assert.equal(
+      replayed.data.game.players[0].pushing,
+      'cart0',
+      'replay must not toggle grab a second time',
+    );
+    assert.equal(replayed.data.game.players[0].mask, 22);
+    assert.equal(replayed.data.game.players[0].cooldown, 30);
+    assert.deepEqual(replayed.data.game.pings, [ping]);
+    assert.equal(mass(replayed.data.game), total);
+  } finally {
+    Date.now = originalNow;
+  }
+});
+test('API accepts a coalesced one-second history despite floating point rounding', async () => {
+  const made = await request(users[0], 'create', { season: 'autumn' });
+  const code = made.data.game.code;
+  const started = await request(users[0], 'start', { code });
+  const round = started.data.game.round;
+  const history = createInputHistory(0);
+  for (let i = 1; i <= 20; i++) history.sample(no, i * 50, true);
+  const frames = history.take();
+  assert.equal(frames.length, 1);
+  assert(frames[0].dt > 1 && frames[0].dt < 1 + 1e-6);
+  const result = await request(users[0], 'input', {
+    code,
+    round,
+    seq: 1,
+    frames,
+  });
+  assert.equal(result.status, 200);
+  assert.equal(result.data.game.players[0].seq, 1);
+  const tooLong = await request(users[0], 'input', {
+    code,
+    round,
+    seq: 2,
+    frames: [{ dt: 1.0001, input: no }],
+  });
+  assert.equal(
+    tooLong.status,
+    400,
+    'the tolerance cannot expand the history window materially',
+  );
+});
+test('API accepts bounded sampled look history and rejects malformed or oversized history without applying it', async () => {
+  const made = await request(users[0], 'create', { season: 'autumn' });
+  const code = made.data.game.code;
+  const started = await request(users[0], 'start', { code });
+  const round = started.data.game.round;
+  const frames = Array.from({ length: 20 }, (_, i) => ({
+    dt: 0.05,
+    input: {
+      ...no,
+      x: 1,
+      yaw: -1.5 + i * 0.01,
+      pitch: -0.1 - i * 0.01,
+      tool: 'broom',
+      grab: false,
+      ping: false,
+    },
+  }));
+  const valid = await request(users[0], 'input', {
+    code,
+    round,
+    seq: 1,
+    frames,
+  });
+  assert.equal(
+    valid.status,
+    200,
+    'one second of legitimate 20 Hz look samples must fit the HTTP payload limit',
+  );
+  for (const frames of [
+    [{ dt: -0.1, input: no }],
+    [{ dt: null, input: no }],
+    [{ dt: 0.1, input: [] }],
+    [
+      { dt: 0.6, input: no },
+      { dt: 0.6, input: no },
+    ],
+    Array.from({ length: 33 }, () => ({ dt: 0, input: {} })),
+  ]) {
+    const invalid = await request(users[0], 'input', {
+      code,
+      round,
+      seq: 2,
+      frames,
+    });
+    assert.equal(invalid.status, 400);
+    const state = (await request(users[0], 'poll', { code })).data.game;
+    assert.equal(
+      state.players[0].seq,
+      1,
+      'rejected history cannot advance authoritative sequence',
+    );
+    assert.equal(mass(state), mass(valid.data.game));
+  }
+  const state = (await request(users[0], 'poll', { code })).data.game;
+  Object.assign(state.players[0], { working: true, crouched: true, bag: 2 });
+  sql
+    .prepare('UPDATE rooms SET state=? WHERE code=?')
+    .run(JSON.stringify(state), code);
+  const beforeMass = mass(state),
+    position = [state.players[0].x, state.players[0].y];
+  const paused = await request(users[0], 'input', {
+    code,
+    round,
+    seq: 2,
+    frames: [],
+    input: {
+      ...no,
+      x: 1,
+      work: true,
+      grab: true,
+      mask: true,
+      ping: true,
+      tool: 'scoop',
+    },
+  });
+  assert.equal(paused.status, 200);
+  const player = paused.data.game.players[0];
+  assert.equal(player.working, false);
+  assert.equal(player.crouched, false);
+  assert.equal(
+    player.tool,
+    'scoop',
+    'pause keeps the selected tool rather than defaulting to broom',
+  );
+  assert.equal(player.pushing, null);
+  assert.equal(player.mask, 0);
+  assert.equal(paused.data.game.pings.length, 0);
+  assert.deepEqual([player.x, player.y], position);
+  assert.equal(mass(paused.data.game), beforeMass);
+});
+compile('lib/follow-camera.ts', 'follow-camera.mjs', (s) =>
+  s.replace(/(['"])\.\/view-controls\1/gu, "'./view-controls.mjs'"),
+);
 compile('lib/worker-avatar.ts', 'worker-avatar.mjs');
 compile('lib/street-materials.ts', 'street-materials.mjs');
 compile('lib/street-detail.ts', 'street-detail.mjs');
+compile('lib/corner-detail.ts', 'corner-detail.mjs');
 compile('lib/scene3d.ts', 'scene3d.mjs', (s) =>
   s.replace(
-    /(['"])\.\/(game|street-materials|street-detail|follow-camera|worker-avatar)\1/gu,
+    /(['"])\.\/(game|street-materials|street-detail|corner-detail|follow-camera|worker-avatar|street-colliders|view-controls)\1/gu,
     (_, _quote, name) => `'./${name}.mjs'`,
   ),
 );
@@ -484,6 +1030,24 @@ test('follow camera retracts before walls and overhangs, recovers gradually and 
     'same-frame retraction keeps the near plane off a wall',
   );
   assert(camera.position.z < 1.68);
+  const closeTransport = follow.update(
+    camera,
+    position,
+    0,
+    0,
+    false,
+    0.016,
+    true,
+  );
+  assert(
+    closeTransport.distance > 0.78,
+    'this fixture keeps a valid compressed camera boom',
+  );
+  assert.equal(
+    closeTransport.avatarVisible,
+    false,
+    'a compressed transport camera must leave the cart visible',
+  );
   const recovering = follow.update(camera, position, Math.PI, 0, false, 0.016);
   assert(
     recovering.distance > blocked.distance &&
@@ -526,6 +1090,30 @@ test('follow camera retracts before walls and overhangs, recovers gradually and 
     assert(camera.position.toArray().every(Number.isFinite));
   }
 });
+test('visible third-person pitch responds to reversal at both limits and after a first-person extreme', () => {
+  const camera = new THREE.PerspectiveCamera(),
+    position = new THREE.Vector3(20, 0, 35);
+  const follow = createFollowCamera(createCameraCollision(new THREE.Group()));
+  const direction = (pitch) => {
+    follow.reset();
+    follow.update(camera, position, 0, pitch, false, 0.016);
+    return camera.getWorldDirection(new THREE.Vector3()).y;
+  };
+  const top = clampViewPitch(100, 'third'),
+    bottom = clampViewPitch(-100, 'third');
+  assert(
+    direction(clampViewPitch(top - 0.024, 'third')) < direction(top) - 0.01,
+  );
+  assert(
+    direction(clampViewPitch(bottom + 0.024, 'third')) >
+      direction(bottom) + 0.005,
+  );
+  const afterSwitch = clampViewPitch(clampViewPitch(100, 'first'), 'third');
+  assert(
+    direction(afterSwitch - 0.024) < direction(afterSwitch) - 0.01,
+    'a first-person high angle cannot leave invisible overshoot when V selects third-person',
+  );
+});
 const { createWorkerAvatar, animateWorkerAvatar } = await import(
   path.join(temp, 'worker-avatar.mjs')
 );
@@ -549,6 +1137,15 @@ test('full-body worker keeps grips attached, crouches with grounded boots and bo
     assert(object, name);
     return object;
   };
+  let poseTime = base.time;
+  const settle = (pose, count = 60) => {
+    let sample;
+    for (let i = 0; i < count; i++) {
+      sample = { ...pose, dt: 1 / 60, time: (poseTime += 1 / 60) };
+      animateWorkerAvatar(model, sample);
+    }
+    return sample;
+  };
   animateWorkerAvatar(model, base);
   const torsoY = part('worker-torso').position.y;
   const bootY = part('worker-boot-left').position.y;
@@ -571,14 +1168,14 @@ test('full-body worker keeps grips attached, crouches with grounded boots and bo
     { ...base, mask: true, bag: 99 },
   ];
   for (const pose of poses) {
-    animateWorkerAvatar(model, pose);
+    const sample = settle(pose);
     model.updateMatrixWorld(true);
     const matrices = [];
     model.traverse((o) => {
       assert(o.matrixWorld.elements.every(Number.isFinite));
       matrices.push([...o.matrixWorld.elements]);
     });
-    animateWorkerAvatar(model, pose);
+    animateWorkerAvatar(model, sample);
     model.updateMatrixWorld(true);
     const repeated = [];
     model.traverse((o) => repeated.push([...o.matrixWorld.elements]));
@@ -615,11 +1212,10 @@ test('full-body worker keeps grips attached, crouches with grounded boots and bo
       }
     }
   }
-  animateWorkerAvatar(model, { ...base, crouched: true });
+  settle({ ...base, crouched: true });
   assert(part('worker-torso').position.y < torsoY - 0.2);
-  assert.equal(
-    part('worker-boot-left').position.y,
-    bootY,
+  assert(
+    Math.abs(part('worker-boot-left').position.y - bootY) < 1e-5,
     'crouch bends joints instead of scaling feet below ground',
   );
   animateWorkerAvatar(model, { ...base, tool: 'scoop', bag: -1 });
@@ -627,13 +1223,70 @@ test('full-body worker keeps grips attached, crouches with grounded boots and bo
   animateWorkerAvatar(model, { ...base, tool: 'scoop', bag: 99, mask: true });
   assert.equal(part('worker-scoop-load').count, 18);
   assert(part('worker-mask').visible);
-  animateWorkerAvatar(model, { ...base, pushing: true });
+  settle({ ...base, pushing: true });
   assert(!part('worker-broom').visible && !part('worker-scoop').visible);
-  assert.equal(
-    part('worker-hand-left').position.z,
-    0.45,
+  assert(
+    Math.abs(part('worker-hand-left').position.z - 0.45) < 1e-5,
     'push grips match the cart handle behind its centre',
   );
+});
+test('worker crouch transitions and distance-driven strafe gait remain cosmetic and stable at rest', () => {
+  const model = createWorkerAvatar('#517b65');
+  const torso = model.getObjectByName('worker-torso');
+  const foot = model.getObjectByName('worker-boot-left');
+  const base = {
+    dt: 1 / 60,
+    time: 1,
+    speed: 0,
+    crouched: false,
+    working: false,
+    tool: 'broom',
+    pushing: false,
+    bag: 0,
+    mask: false,
+    movement: { x: 0, z: 1, distance: 0 },
+  };
+  animateWorkerAvatar(model, base);
+  const standing = torso.position.y;
+  animateWorkerAvatar(model, { ...base, time: 1 + 1 / 60, crouched: true });
+  const firstCrouch = torso.position.y;
+  for (let i = 2; i <= 90; i++)
+    animateWorkerAvatar(model, { ...base, time: 1 + i / 60, crouched: true });
+  assert(
+    firstCrouch < standing && firstCrouch > torso.position.y + 0.1,
+    'crouch eases toward the grounded pose instead of snapping in one frame',
+  );
+
+  for (let i = 1; i <= 180; i++)
+    animateWorkerAvatar(model, {
+      ...base,
+      time: 3 + i / 60,
+      speed: 1.5,
+      movement: { x: 1.5, z: 0, distance: 0.37 },
+    });
+  const stationaryDistance = foot.position.clone();
+  animateWorkerAvatar(model, {
+    ...base,
+    time: 6.1,
+    speed: 1.5,
+    movement: { x: 1.5, z: 0, distance: 0.37 },
+  });
+  assert(
+    foot.position.distanceTo(stationaryDistance) < 1e-8,
+    'time passing alone cannot slide the feet through a movement cycle',
+  );
+  animateWorkerAvatar(model, {
+    ...base,
+    time: 6.2,
+    speed: 1.5,
+    movement: { x: 1.5, z: 0, distance: 0.49 },
+  });
+  assert(
+    foot.position.distanceTo(stationaryDistance) > 0.01,
+    'actual travelled distance advances a directional walking pose',
+  );
+  assert.deepEqual(model.position.toArray(), [0, 0, 0]);
+  assert.equal(model.rotation.y, 0);
 });
 test('3D environment constructs valid geometry, camera street view is unobstructed and ground is present', () => {
   const geometryErrors = [];
@@ -682,7 +1335,11 @@ test('3D environment constructs valid geometry, camera street view is unobstruct
     4,
     'bounded nearby high-quality light pool',
   );
-  assert.equal(lighting.emitters.length, 8);
+  assert.equal(
+    lighting.emitters.length,
+    10,
+    'eight street fixtures and two corner emitters share the same four-light pool',
+  );
   assert(lighting.lights.every((light) => !light.castShadow && !light.visible));
   assert.equal(surfaces.materials.length, 7);
   assert.equal(
@@ -709,7 +1366,10 @@ test('3D environment constructs valid geometry, camera street view is unobstruct
       }
     }
   });
-  assert(meshes > 20 && meshes < 160);
+  assert(
+    meshes > 20 && meshes < 180,
+    'bounded static materials including the café corner',
+  );
   assert(vertices > 5000);
   assert(
     litRoad,
@@ -906,12 +1566,6 @@ for (const season of ['autumn', 'rain', 'mixed'])
     },
   );
 
-const mass = (g) =>
-  g.leaves.length +
-  g.piles.reduce((n, p) => n + p.amount, 0) +
-  g.players.reduce((n, p) => n + p.bag, 0) +
-  g.carts.reduce((n, c) => n + c.stored, 0) +
-  g.score;
 test('one stroke moves and gathers the forward patch; rear, side and wall remain untouched', () => {
   const { g, p } = leafSetup();
   g.leaves = [
@@ -1180,16 +1834,18 @@ test('eight concurrent workers repeatedly sweep, scoop, replay and time out with
   save();
   const before = mass(g);
   for (let seq = 1; seq <= 8; seq++) {
+    const input = {
+      yaw: -Math.PI / 2,
+      crouch: true,
+      work: true,
+      tool: seq <= 2 ? 'broom' : 'scoop',
+    };
     const extra = {
       code,
       round: g.round,
       seq,
-      input: {
-        yaw: -Math.PI / 2,
-        crouch: true,
-        work: true,
-        tool: seq <= 2 ? 'broom' : 'scoop',
-      },
+      input,
+      frames: [{ input, dt: 0.35 }],
     };
     const results = await Promise.all(
       users.slice(0, 8).map((u) => request(u, 'input', extra)),

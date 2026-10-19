@@ -1,6 +1,8 @@
 # Hà Nội · Ca đêm — Codex web handoff
 
-Source hiện tại là **0.6 · Theo bước**, tiếp tục game 3D góc nhìn thứ ba/thứ nhất dọn phố Hà Nội từ bản 0.3 (source gốc `23c89fcaf37bc662eb572d97b4b06493110b82ea`). Chơi solo hoặc phòng 1–8 người qua HTTP/D1.
+Source hiện tại là **0.7 · Góc phố**, tiếp tục game 3D góc nhìn thứ ba/thứ nhất dọn phố Hà Nội từ bản 0.3 (source gốc `23c89fcaf37bc662eb572d97b4b06493110b82ea`). Chơi solo hoặc phòng 1–8 người qua HTTP/D1.
+
+Đợt 0.7 sửa sequence vào lại phòng, thêm input history có giới hạn cho HTTP chậm, bỏ deadzone camera, thống nhất collider đồ phố, cập nhật nhãn ping; trau chuốt nhân vật/dụng cụ, góc quán gần tập kết và HUD. Xem `docs/POLISH-0.7.md` cho hành vi, kiểm chứng và giới hạn; không coi đây là xác nhận FPS/tám thiết bị hoặc chất lượng ngang video.
 
 Bản 0.6 để camera sau vai làm mặc định; **V** đổi sang góc nhìn thứ nhất. Nhân vật toàn thân có động tác đi/cúi/quét/hốt/đổ/đẩy xe, camera tự thu gần vật cản. Xem `docs/THIRD-PERSON-0.6.md`. Camera không đổi tầm tay hoặc luật tương tác.
 

@@ -1,6 +1,8 @@
 import * as T from 'three';
 import { createCameraCollision, createFollowCamera } from './follow-camera';
 import { createWorkerAvatar, animateWorkerAvatar } from './worker-avatar';
+import { addCornerDetail } from './corner-detail';
+import { CAFE_TABLES, CAFE_STOOL_OFFSETS, INSTRUCTION_BOARD, PARKED_SCOOTERS } from './street-colliders';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import {
@@ -203,6 +205,7 @@ function sign(
   bg = '#24473e',
   fg = '#f3dfac',
   rotation = 0,
+  wayfinding = false,
 ) {
   if (typeof document === 'undefined') return;
   const texture = canvasTexture(768, 192, (c) => {
@@ -219,7 +222,7 @@ function sign(
   });
   const m = new T.Mesh(
     new T.PlaneGeometry(w, h),
-    new T.MeshStandardMaterial({
+    wayfinding ? new T.MeshBasicMaterial({ map: texture, side: T.DoubleSide }) : new T.MeshStandardMaterial({
       map: texture,
       roughness: 0.9,
       side: T.DoubleSide,
@@ -245,8 +248,8 @@ function mergeStatic(root: T.Group, emitters: StreetLight[] = []) {
       o.material.transparent
     )
       return;
-    const a = groups.get(o.material) || [];
     const geometry = o.geometry.clone().applyMatrix4(o.matrixWorld);
+    const a = groups.get(o.material) || [];
     // Rounded props are non-indexed; box/cylinder geometry is indexed.
     // Normalize before batching so no prop silently disappears from the merge.
     if (!geometry.index)
@@ -291,6 +294,8 @@ function mergeStatic(root: T.Group, emitters: StreetLight[] = []) {
   for (const [material, geos] of groups) {
     const merged = mergeGeometries(geos, false);
     if (!merged) throw new Error('Không ghép được geometry tĩnh của khu phố.');
+    merged.computeBoundingBox();
+    merged.computeBoundingSphere();
     const mesh = new T.Mesh(merged, material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -820,20 +825,31 @@ function cartMesh() {
     );
   const load = new T.Group();
   load.name = 'load';
+  const loadLeaves = new T.InstancedMesh(
+    new T.IcosahedronGeometry(0.13, 0), mat('#ffffff'), 24,
+  );
+  const piece = new T.Object3D();
   for (let j = 0; j < 24; j++) {
-    const m = new T.Mesh(
-      new T.IcosahedronGeometry(0.12 + (j % 3) * 0.015, 0),
-      mat(['#a58049', '#bc9755', '#73784d'][j % 3]),
-    );
-    m.position.set(
+    piece.position.set(
       Math.sin(j * 12) * 0.3,
       (j % 3) * 0.08,
       Math.cos(j * 7) * 0.4,
     );
-    m.scale.y = 0.35;
-    load.add(m);
+    const size = (0.12 + (j % 3) * 0.015) / 0.13;
+    piece.scale.set(size, size * 0.35, size);
+    piece.rotation.set(0, j * 2.39, (j % 3 - 1) * 0.2);
+    piece.updateMatrix();
+    loadLeaves.setMatrixAt(j, piece.matrix);
+    loadLeaves.setColorAt(j, new T.Color(['#a58049', '#bc9755', '#73784d'][j % 3]));
   }
+  loadLeaves.computeBoundingSphere();
+  load.add(loadLeaves);
   root.add(load);
+  // Keep only genuinely moving parts separate; batch the rigid frame once.
+  const moving = root.children.filter((child) => child.name === 'wheel' || child.name === 'load');
+  moving.forEach((child) => child.removeFromParent());
+  mergeStatic(root);
+  moving.forEach((child) => root.add(child));
   return root;
 }
 function glove(parent: T.Group, x: number, y: number, z: number) {
@@ -950,6 +966,7 @@ export function createWorld() {
   });
   // Facing houses on the far pavement make the playable street feel enclosed.
   for (let i = 0; i < 8; i++) {
+    if (i === 3) continue; // Authored café corner uses this same building footprint.
     const g = new T.Group();
     g.position.set(4 + i * 8, 0, 44.5);
     g.rotation.y = Math.PI;
@@ -1044,22 +1061,24 @@ export function createWorld() {
     }
   });
   // Cafe furniture, parked scooters and cables.
-  for (const x of [5, 7.2, 49, 52]) {
-    cylinder(staticRoot, x, 0.57, 12.3, 0.4, 0.4, 0.07, '#597667');
-    cylinder(staticRoot, x, 0.3, 12.3, 0.05, 0.05, 0.6, '#405747');
-    for (const dx of [-0.55, 0.55]) {
-      box(staticRoot, x + dx, 0.3, 12.5, 0.32, 0.06, 0.32, '#747f59');
+  for (const table of CAFE_TABLES) {
+    const x = table.x * S, z = table.y * S;
+    cylinder(staticRoot, x, 0.57, z, table.radius * S, table.radius * S, 0.07, '#597667');
+    cylinder(staticRoot, x, 0.3, z, 0.05, 0.05, 0.6, '#405747');
+    for (const offset of CAFE_STOOL_OFFSETS) {
+      const dx = offset * S;
+      box(staticRoot, x + dx, 0.3, z + 0.2, 0.32, 0.06, 0.32, '#747f59');
       for (const ex of [-0.1, 0.1])
-        box(staticRoot, x + dx + ex, 0.14, 12.5, 0.035, 0.28, 0.24, '#747f59');
+        box(staticRoot, x + dx + ex, 0.14, z + 0.2, 0.035, 0.28, 0.24, '#747f59');
     }
   }
-  [11, 14, 29, 56, 46].forEach((x, i) =>
+  PARKED_SCOOTERS.forEach((scooter) =>
     detailedScooter(
       staticRoot,
-      x,
-      29.25,
-      0.47 + i * 0.09,
-      ['#a24f3e', '#b6b7a8', '#497e79', '#4d5c72', '#d2bc87'][i],
+      scooter.x * S,
+      scooter.y * S,
+      scooter.angle,
+      scooter.color,
       surfaces,
     ),
   );
@@ -1100,6 +1119,8 @@ export function createWorld() {
       0.5,
       '#a48340',
       '#fff0c1',
+      0,
+      true,
     );
     for (const dx of [-1.5, 1.5]) {
       cylinder(staticRoot, x + dx, 0.26, z - 1.5, 0.04, 0.16, 0.5, '#d5a253');
@@ -1130,10 +1151,10 @@ export function createWorld() {
     '#eeead2',
   );
   const board = new T.Group();
-  board.position.set(20.8, 0, 39.3);
+  board.position.set(INSTRUCTION_BOARD.x * S, 0, INSTRUCTION_BOARD.y * S);
   for (const z of [-0.8, 0.8])
     box(board, 0, 0.85, z, 0.07, 1.7, 0.07, '#6c795f');
-  box(board, 0, 1.45, 0, 0.1, 1.16, 2, '#34574b');
+  box(board, 0, 1.45, 0, INSTRUCTION_BOARD.halfX * S * 2, 1.16, INSTRUCTION_BOARD.halfY * S * 2, '#34574b');
   [
     'CA ĐẦU · V ĐỔI GÓC NHÌN',
     '1 · C + E QUÉT LÁ',
@@ -1154,7 +1175,9 @@ export function createWorld() {
     ),
   );
   staticRoot.add(board);
+  const corner = addCornerDetail(staticRoot, surfaces);
   const lighting = streetLighting(scene, staticRoot, surfaces);
+  lighting.emitters.push(...corner.emitters);
   const cameraCollision = createCameraCollision(staticRoot);
   mergeStatic(staticRoot, lighting.emitters);
   return {
@@ -1225,9 +1248,9 @@ export function createFirstPersonScene(
     'position',
     new T.Float32BufferAttribute(
       [
-        0, 0.018, 0, 0, 0.006, -0.13, -0.034, 0.008, -0.075, -0.06, 0, 0,
-        -0.034, 0.006, 0.075, 0, 0.01, 0.13, 0.034, 0.006, 0.075, 0.06, 0, 0,
-        0.034, 0.008, -0.075,
+        0, 0.026, 0, 0, 0.04, -0.13, -0.034, 0.012, -0.075, -0.06, 0.004, 0,
+        -0.034, 0.008, 0.075, 0, 0.034, 0.13, 0.034, 0.014, 0.075, 0.06, 0.009, 0,
+        0.034, 0.018, -0.075,
       ],
       3,
     ),
@@ -1568,6 +1591,9 @@ export function createFirstPersonScene(
     const rs = options.settings;
     const key = JSON.stringify(rs);
     if (key !== lastSettings) {
+      // The light/vertex-colour bake remains in low quality. Skip costly image-
+      // based reflection there; it is restored when the player selects high.
+      scene.environment = rs.quality === 'high' ? environment.texture : null;
       renderer.setPixelRatio(
         Math.min(devicePixelRatio, rs.quality === 'high' ? 1.7 : 0.75),
       );
@@ -1584,7 +1610,11 @@ export function createFirstPersonScene(
       cartModels.forEach((model) => (model.userData.placed = false));
       people.forEach((model, id) => {
         const other = g.players.find((p) => p.id === id);
-        if (other) model.position.set(other.x * S, 0, other.y * S);
+        if (other) {
+          model.position.set(other.x * S, 0, other.y * S);
+          model.userData.walkPosition = model.position.clone();
+          model.userData.walkDistance = 0;
+        }
       });
       if (p) {
         camX = p.x * S;
@@ -1613,6 +1643,7 @@ export function createFirstPersonScene(
           look.pitch,
           p.crouched,
           dt,
+          !!p.pushing,
         );
         localAvatarVisible = result.avatarVisible;
       } else {
@@ -1641,6 +1672,7 @@ export function createFirstPersonScene(
       light.visible = rs.quality === 'high';
       const source = nearbyLights[i];
       light.position.set(source.x, source.y, source.z);
+      light.color.set(source.color);
       light.target.position.set(source.x, 0, source.z + 0.6);
       light.intensity = source.power;
     });
@@ -1665,8 +1697,9 @@ export function createFirstPersonScene(
           0.016 + (j % 3) * 0.009,
           position.y * S + Math.cos(l.id * 3 + j * 2.8) * 0.24,
         );
-        dummy.rotation.set(0, l.id + j * 1.3, 0);
-        dummy.scale.setScalar(0.8 + (j % 3) * 0.25);
+        dummy.rotation.set((j % 3 - 1) * 0.12, l.id + j * 1.3, (j % 4 - 1.5) * 0.06);
+        const size = 0.8 + (j % 3) * 0.25;
+        dummy.scale.set(size * (0.8 + (l.kind % 3) * 0.14), size, size);
         dummy.updateMatrix();
         leaves.setMatrixAt(count, dummy.matrix);
         leaves.setColorAt(
@@ -1769,16 +1802,21 @@ export function createFirstPersonScene(
           1 - Math.exp(-dt * 12),
         );
       const previous = model.userData.walkPosition as T.Vector3 | undefined;
-      const speed = previous
-        ? Math.min(4.5, model.position.distanceTo(previous) / dt)
-        : 0;
+      const delta = previous ? model.position.clone().sub(previous) : new T.Vector3();
+      // A round reset or large correction is placement, never a footstep.
+      if (delta.length() > 1.5) delta.set(0, 0, 0);
+      const traveled = delta.length();
+      const speed = Math.min(4.5, traveled / dt);
+      model.userData.walkDistance = (model.userData.walkDistance ?? 0) + traveled;
       model.userData.walkPosition = model.position.clone();
       model.rotation.y = local ? Math.PI + look.yaw : Math.PI / 2 - other.face;
+      delta.applyAxisAngle(new T.Vector3(0, 1, 0), -model.rotation.y);
       const workerTask = local ? options.task : taskAt(g, other);
       animateWorkerAvatar(model, {
         dt,
         time: t / 1000,
         speed,
+        movement: { x: delta.x / dt, z: delta.z / dt, distance: model.userData.walkDistance },
         crouched: other.crouched,
         working: other.working && !!workerTask,
         tool: other.tool,
@@ -1814,19 +1852,26 @@ export function createFirstPersonScene(
         marker.rotation.x = -Math.PI / 2;
         marker.position.y = 0.06;
         model.add(marker);
-        const text = label(
-          (g.players.find((p) => p.id === ping.playerId)?.name ?? 'Đồng đội') +
+        scene.add(model);
+        pingModels.set(ping.playerId, model);
+      }
+      const caption = (g.players.find((p) => p.id === ping.playerId)?.name ?? 'Đồng đội') +
             ' · ' +
             (ping.kind === 'cart'
               ? 'XE ĐẦY'
               : ping.kind === 'drain'
                 ? 'CỐNG TẮC'
-                : 'CẦN GIÚP'),
-        );
+                : 'CẦN GIÚP');
+      if (model.userData.caption !== caption) {
+        const old = model.children.find((o) => o instanceof T.Sprite);
+        if (old instanceof T.Sprite) {
+          old.removeFromParent();
+          disposeLabel(old);
+        }
+        const text = label(caption);
         text.position.y = 1.8;
         model.add(text);
-        scene.add(model);
-        pingModels.set(ping.playerId, model);
+        model.userData.caption = caption;
       }
       model.position.set(ping.x * S, waterDepth(g, ping), ping.y * S);
       model.visible = !options.menu;

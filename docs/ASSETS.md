@@ -25,3 +25,9 @@ Các bản đồ procedural là tài nguyên mỹ thuật gốc tạo bằng sou
 ## Nhân vật 0.6
 
 `lib/worker-avatar.ts`: geometry và rig/hoạt ảnh procedural gốc được viết cho game, vertex-color vật liệu nội bộ; không tải model, motion capture hoặc asset từ game trong video. `lib/follow-camera.ts` chỉ xử lý hiển thị. Không thêm file tài nguyên bên ngoài.
+
+## Góc cà phê và tập kết
+
+`lib/corner-detail.ts` dựng một mặt tiền thay thế trong dãy nhà hiện có: quán cà phê cửa kính lõm, quầy và kệ, mái che xanh, biển vẫy dọc, một ô cửa nhà sáng và cửa cuốn nhỏ đã đóng cạnh bên. Hình học, dấu chỉ hướng dưới đường và các biển chữ đều là source/Canvas gốc của dự án; không thêm ảnh, font, model hay nguồn bên ngoài. Dùng lại bộ vật liệu và atlas phố đêm hiện có. Biển Canvas tối đa 512 × 512, sử dụng font hệ thống. Ánh sáng ấm của quán và ánh sáng lạnh nhẹ ở cột tập kết dùng chung pool tối đa bốn đèn; không tăng số đèn động.
+
+Phần thể tích mới nằm trong footprint của mặt tiền thay thế ở mép ngoài đường đi; đoạn quét đầu, đường đẩy xe, điểm tập kết và bảng hướng dẫn được để trống. Mái/biển vẫy nhô ra chỉ ở độ cao trên đầu và tham gia vật cản camera như các mặt tiền khác. Không lấy ảnh từ clip làm cảnh hoặc kết cấu.

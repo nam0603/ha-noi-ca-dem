@@ -7,6 +7,8 @@ export type WorkerAnimation = {
   dt: number;
   time: number;
   speed: number;
+  /** Avatar-local velocity and cumulative rendered travel, all in metres. */
+  movement?: { x: number; z: number; distance: number };
   crouched: boolean;
   working: boolean;
   tool: 'broom' | 'scoop';
@@ -27,6 +29,17 @@ type WorkerRig = {
   broom: T.Group;
   scoop: T.Group;
   load: T.InstancedMesh;
+  pose?: {
+    time: number;
+    crouch: number;
+    work: number;
+    dump: number;
+    push: number;
+    moving: number;
+    phase: number;
+    direction: T.Vector2;
+    distance?: number;
+  };
 };
 const rigs = new WeakMap<T.Group, WorkerRig>();
 const up = new T.Vector3(0, 1, 0);
@@ -101,15 +114,16 @@ export function createWorkerAvatar(color: string): T.Group {
     return mat;
   };
   // Materials belong to this avatar; the scene owns disposal through traversal.
-  const uniform = material(color),
-    trousers = material('#324d44'),
-    vest = material('#df912d'),
-    reflective = material('#d1e1c2', 0.48, 0.18),
-    dark = material('#25372f'),
-    skin = material('#bf9674'),
-    glove = material('#aeb5a1'),
-    rubber = material('#3f5347'),
-    helmetMaterial = material('#e0bf73', 0.6),
+  const teamColor = new T.Color('#71806b').lerp(new T.Color(color), 0.48);
+  const uniform = material(teamColor.getStyle()),
+    trousers = material('#35483e'),
+    vest = material('#c78b3b'),
+    reflective = material('#c9d0b9', 0.58, 0.12),
+    dark = material('#28362e'),
+    skin = material('#b98e6b'),
+    glove = material('#89937b'),
+    rubber = material('#34493f'),
+    helmetMaterial = material('#cbb17b', 0.68),
     wood = material('#9b7b4c'),
     straw = material('#bda36a'),
     steel = material('#6d8988', 0.52, 0.45),
@@ -181,27 +195,36 @@ export function createWorkerAvatar(color: string): T.Group {
 
   const torso = new T.Group();
   torso.name = 'worker-torso';
-  box(torso, 0.5, 0.55, 0.29, uniform, 0, 0.29, 0, 0.065);
+  const shirt = box(torso, 0.48, 0.56, 0.285, uniform, 0, 0.29, 0, 0.055);
+  const shirtPositions = shirt.geometry.attributes.position;
+  // A waist narrower than the shoulders avoids a rigid rectangular torso silhouette.
+  for (let i = 0; i < shirtPositions.count; i++) {
+    const taper =
+      0.84 + clamp((shirtPositions.getY(i) + 0.28) / 0.56, 0, 1) * 0.16;
+    shirtPositions.setX(i, shirtPositions.getX(i) * taper);
+  }
+  shirt.geometry.computeVertexNormals();
+  box(torso, 0.35, 0.16, 0.255, trousers, 0, -0.035, -0.005, 0.045);
   // Vest panels and reflective bars on both sides remain legible from the chase camera.
   for (const side of [-1, 1]) {
-    box(torso, 0.42, 0.44, 0.018, vest, 0, 0.28, side * 0.151, 0.008);
+    box(torso, 0.4, 0.43, 0.009, vest, 0, 0.28, side * 0.146, 0.004);
     for (const y of [0.17, 0.37]) {
-      box(torso, 0.44, 0.046, 0.022, dark, 0, y, side * 0.162);
-      box(torso, 0.43, 0.031, 0.024, reflective, 0, y, side * 0.165);
+      box(torso, 0.405, 0.036, 0.004, dark, 0, y, side * 0.153);
+      box(torso, 0.4, 0.025, 0.005, reflective, 0, y, side * 0.156);
     }
-    for (const x of [-0.145, 0.145])
-      box(torso, 0.035, 0.42, 0.022, reflective, x, 0.29, side * 0.166);
+    for (const x of [-0.14, 0.14])
+      box(torso, 0.026, 0.41, 0.005, reflective, x, 0.29, side * 0.156);
   }
-  box(torso, 0.012, 0.43, 0.026, dark, 0, 0.28, 0.172);
+  box(torso, 0.009, 0.42, 0.006, dark, 0, 0.28, 0.159);
   for (const x of [-0.135, 0.135])
-    box(torso, 0.095, 0.075, 0.025, uniform, x, 0.25, 0.179, 0.008);
-  cylinder(torso, 0.072, 0.08, 0.1, skin, 0, 0.61, 0);
-  box(torso, 0.38, 0.06, 0.29, dark, 0, 0.025, 0, 0.015);
-  box(torso, 0.055, 0.045, 0.025, steel, 0, 0.025, 0.158);
+    box(torso, 0.09, 0.067, 0.01, uniform, x, 0.26, 0.159, 0.005);
+  cylinder(torso, 0.061, 0.067, 0.087, skin, 0, 0.61, 0);
+  box(torso, 0.355, 0.047, 0.273, dark, 0, 0.025, 0, 0.012);
+  box(torso, 0.045, 0.035, 0.015, steel, 0, 0.025, 0.146);
   // Small back patch, with no texture or unlicensed insignia.
-  box(torso, 0.14, 0.065, 0.024, trousers, 0, 0.44, -0.175, 0.008);
+  box(torso, 0.14, 0.06, 0.008, trousers, 0, 0.44, -0.154, 0.004);
   for (const x of [-0.039, 0, 0.039])
-    box(torso, 0.018, 0.027, 0.003, reflective, x, 0.44, -0.189);
+    box(torso, 0.018, 0.027, 0.002, reflective, x, 0.44, -0.159);
   bake(torso);
   root.add(torso);
 
@@ -209,45 +232,45 @@ export function createWorkerAvatar(color: string): T.Group {
   head.name = 'worker-head';
   const face = mesh(
     head,
-    new T.SphereGeometry(0.148, 12, 10),
+    new T.SphereGeometry(0.127, 12, 10),
     skin,
     0,
-    0.74,
+    0.727,
     0.006,
   );
   face.scale.set(0.9, 1.12, 0.92);
   for (const side of [-1, 1]) {
     mesh(
       head,
-      new T.SphereGeometry(0.033, 8, 6),
+      new T.SphereGeometry(0.026, 8, 6),
       skin,
-      side * 0.134,
-      0.74,
+      side * 0.116,
+      0.727,
       0.005,
     );
-    box(head, 0.027, 0.011, 0.011, dark, side * 0.052, 0.772, 0.133, 0.004);
+    box(head, 0.023, 0.009, 0.009, dark, side * 0.045, 0.755, 0.114, 0.003);
   }
-  box(head, 0.035, 0.046, 0.041, skin, 0, 0.744, 0.143, 0.012);
+  box(head, 0.03, 0.037, 0.035, skin, 0, 0.727, 0.122, 0.01);
   const helmet = mesh(
     head,
-    new T.SphereGeometry(0.172, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2),
+    new T.SphereGeometry(0.15, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2),
     helmetMaterial,
     0,
-    0.82,
+    0.798,
     0,
   );
   helmet.scale.y = 0.84;
-  cylinder(head, 0.209, 0.209, 0.027, helmetMaterial, 0, 0.824, 0.018);
-  box(head, 0.05, 0.014, 0.19, reflective, 0, 0.962, -0.005, 0.006);
+  cylinder(head, 0.179, 0.179, 0.021, helmetMaterial, 0, 0.8, 0.018);
+  box(head, 0.044, 0.009, 0.16, uniform, 0, 0.923, -0.005, 0.004);
   bake(head);
   torso.add(head);
   const mask = new T.Group();
   mask.name = 'worker-mask';
-  box(mask, 0.19, 0.088, 0.04, maskMaterial, 0, 0.711, 0.137, 0.016);
-  for (const y of [0.69, 0.713, 0.737])
-    box(mask, 0.15, 0.005, 0.003, reflective, 0, y, 0.159);
+  box(mask, 0.165, 0.074, 0.032, maskMaterial, 0, 0.698, 0.117, 0.013);
+  for (const y of [0.68, 0.7, 0.721])
+    box(mask, 0.13, 0.004, 0.002, reflective, 0, y, 0.134);
   for (const side of [-1, 1])
-    box(mask, 0.013, 0.06, 0.13, maskMaterial, side * 0.13, 0.727, 0.063);
+    box(mask, 0.01, 0.052, 0.11, maskMaterial, side * 0.113, 0.71, 0.056);
   bake(mask);
   torso.add(mask);
 
@@ -262,9 +285,9 @@ export function createWorkerAvatar(color: string): T.Group {
     box(upper, 0.055, 0.11, 0.018, uniform, side * 0.075, -0.045, 0.035, 0.006);
     capsule(lower, 0.075, 0.23, trousers);
     cylinder(lower, 0.078, 0.078, 0.035, reflective, 0, -0.065, 0);
-    box(foot, 0.19, 0.145, 0.32, dark, 0, 0, 0.065, 0.035);
-    box(foot, 0.195, 0.027, 0.327, rubber, 0, -0.057, 0.067, 0.009);
-    cylinder(foot, 0.074, 0.078, 0.13, rubber, 0, 0.095, 0);
+    box(foot, 0.166, 0.133, 0.279, dark, 0, 0, 0.05, 0.028);
+    box(foot, 0.172, 0.024, 0.286, rubber, 0, -0.057, 0.052, 0.008);
+    cylinder(foot, 0.067, 0.074, 0.123, rubber, 0, 0.087, 0);
     for (const part of [upper, lower, foot]) {
       bake(part);
       root.add(part);
@@ -279,9 +302,11 @@ export function createWorkerAvatar(color: string): T.Group {
     upper.name = side < 0 ? 'worker-upper-arm-left' : 'worker-upper-arm-right';
     lower.name = side < 0 ? 'worker-forearm-left' : 'worker-forearm-right';
     hand.name = side < 0 ? 'worker-hand-left' : 'worker-hand-right';
-    capsule(upper, 0.072, 0.19, uniform);
-    cylinder(upper, 0.075, 0.075, 0.037, reflective, 0, 0.02, 0);
-    capsule(lower, 0.061, 0.2, uniform);
+    capsule(upper, 0.067, 0.2, uniform);
+    cylinder(upper, 0.069, 0.069, 0.025, reflective, 0, 0.02, 0);
+    capsule(lower, 0.057, 0.205, uniform);
+    // Broad cuff and elbow folds are readable without a dense layer of tiny detail.
+    cylinder(lower, 0.059, 0.062, 0.036, trousers, 0, 0.095, 0);
     cylinder(lower, 0.063, 0.065, 0.045, glove, 0, -0.12, 0);
     box(hand, 0.11, 0.115, 0.1, glove, 0, -0.015, 0, 0.024);
     // Curled fingers form a grip around the shaft rather than an open mitten.
@@ -382,6 +407,30 @@ export function createWorkerAvatar(color: string): T.Group {
   load.instanceMatrix.needsUpdate = true;
   scoop.add(load);
   root.add(broom, scoop);
+  const contact = new T.Mesh(
+    new T.PlaneGeometry(0.95, 0.72),
+    new T.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      vertexShader: `varying vec2 contactUv;
+        void main() {
+          contactUv = uv - vec2(0.5);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: `varying vec2 contactUv;
+        void main() {
+          float radius = length(contactUv * 2.0);
+          float opacity = 0.13 * exp(-radius * radius * 4.5) * (1.0 - smoothstep(0.65, 1.0, radius));
+          gl_FragColor = vec4(0.015, 0.025, 0.02, opacity);
+        }`,
+    }),
+  );
+  contact.name = 'worker-ground-contact';
+  contact.rotation.x = -Math.PI / 2;
+  contact.position.y = -0.025;
+  // A restrained contact cue also anchors the worker when real shadows are off.
+  // It is deliberately not a directional or physically accurate cast shadow.
+  root.add(contact);
   // These palette-only materials never reach the renderer. Leaf material remains on load meshes.
   for (const mat of palette) if (mat !== leafMaterial) mat.dispose();
   rigs.set(root, { torso, mask, bag, bagFill, arms, legs, broom, scoop, load });
@@ -440,35 +489,107 @@ function joint(
     .addScaledVector(normal, height);
 }
 
-/** Absolute poses: repeated frames never accumulate rotation or move the game player. */
+/** Bounded cosmetic state; repeating a frame timestamp never advances the pose twice. */
 export function animateWorkerAvatar(root: T.Group, options: WorkerAnimation) {
   const rig = rigs.get(root);
   if (!rig) return;
   const t = Number.isFinite(options.time) ? options.time : 0;
   const speed = clamp(Number.isFinite(options.speed) ? options.speed : 0, 0, 7);
-  const moving = clamp(speed / 1.6, 0, 1);
-  const crouch = options.crouched ? 1 : 0;
   const pushing = options.pushing;
   const dumping =
     options.working &&
     (options.taskKind === 'cart' || options.taskKind === 'depot');
   const working = options.working && !pushing && !dumping;
-  const phase = t * (pushing ? 5.8 : 7.4);
-  const gait = Math.sin(phase);
-  const hipY = 0.88 - crouch * 0.22 + Math.abs(gait) * moving * 0.018;
-  const lean = crouch * 0.42 + (pushing ? 0.17 : working ? 0.1 : 0);
+  const travel = options.movement?.distance;
+  const distance =
+    travel !== undefined && Number.isFinite(travel)
+      ? Math.max(0, travel)
+      : undefined;
+  const pose = (rig.pose ??= {
+    time: t,
+    crouch: options.crouched ? 1 : 0,
+    work: working ? 1 : 0,
+    dump: dumping ? 1 : 0,
+    push: pushing ? 1 : 0,
+    moving: 0,
+    phase: 0,
+    direction: new T.Vector2(0, 1),
+    distance,
+  });
+  if (t > pose.time) {
+    const dt = clamp(Number.isFinite(options.dt) ? options.dt : 0, 0, 0.12);
+    const ease = 1 - Math.exp(-dt * 12);
+    pose.crouch = T.MathUtils.lerp(pose.crouch, options.crouched ? 1 : 0, ease);
+    pose.work = T.MathUtils.lerp(
+      pose.work,
+      working ? 1 : 0,
+      1 - Math.exp(-dt * 9),
+    );
+    pose.dump = T.MathUtils.lerp(pose.dump, dumping ? 1 : 0, ease);
+    pose.push = T.MathUtils.lerp(pose.push, pushing ? 1 : 0, ease);
+    pose.moving = T.MathUtils.lerp(pose.moving, clamp(speed / 1.4, 0, 1), ease);
+    const velocity = options.movement;
+    if (
+      velocity &&
+      Number.isFinite(velocity.x) &&
+      Number.isFinite(velocity.z)
+    ) {
+      const direction = new T.Vector2(velocity.x, velocity.z);
+      if (direction.lengthSq() > 0.003) {
+        direction.normalize();
+        const angle = Math.atan2(pose.direction.x, pose.direction.y);
+        const target = Math.atan2(direction.x, direction.y);
+        const turn = Math.atan2(
+          Math.sin(target - angle),
+          Math.cos(target - angle),
+        );
+        const facing = angle + turn * ease;
+        pose.direction.set(Math.sin(facing), Math.cos(facing));
+      }
+    }
+    let travelled = speed * dt;
+    if (distance !== undefined) {
+      travelled =
+        pose.distance === undefined
+          ? 0
+          : clamp(distance - pose.distance, 0, 0.6);
+      if (pose.distance !== undefined && distance < pose.distance)
+        pose.phase = 0;
+    }
+    const stride =
+      T.MathUtils.lerp(0.94, 0.62, pose.crouch) * (pushing ? 0.9 : 1);
+    pose.phase = (pose.phase + travelled / stride) % 1;
+    pose.distance = distance;
+    pose.time = t;
+  }
+  const crouch = pose.crouch,
+    moving = pose.moving;
+  const gait = Math.sin(pose.phase * Math.PI * 2);
+  const hipY = 0.88 - crouch * 0.25 + Math.abs(gait) * moving * 0.013;
+  const lean = crouch * 0.46 + pose.push * 0.13 + pose.work * 0.08;
   rig.torso.position.set(0, hipY, 0);
-  rig.torso.rotation.set(lean, 0, -gait * moving * 0.025);
+  rig.torso.rotation.set(lean, -gait * moving * 0.025, -gait * moving * 0.018);
   rig.torso.updateMatrix();
   rig.mask.visible = options.mask;
 
   for (let i = 0; i < 2; i++) {
     const side = i ? 1 : -1;
-    const step = Math.sin(phase + i * Math.PI);
+    const cycle = (pose.phase + i * 0.5) % 1;
+    const swing = clamp((cycle - 0.6) / 0.4, 0, 1);
+    const stride = T.MathUtils.lerp(0.94, 0.62, crouch) * (pushing ? 0.9 : 1);
+    // In stance the foot travels backwards relative to the hips by the same
+    // distance the worker moves. The shorter swing arc returns it to the front.
+    const reach = stride * 0.3;
+    const step =
+      cycle < 0.6
+        ? reach - cycle * stride
+        : -reach + 2 * reach * (swing * swing * (3 - 2 * swing));
+    const lift = Math.sin(swing * Math.PI) * moving * (0.075 - crouch * 0.025);
     const foot = new T.Vector3(
-      side * (0.13 + crouch * 0.025),
-      0.084 + Math.max(0, step) * moving * 0.075,
-      step * moving * (crouch ? 0.11 : 0.22),
+      side * (0.13 + crouch * 0.025 + Math.abs(pose.direction.x) * 0.035) +
+        pose.direction.x * step * moving * 0.65,
+      0.071 + lift,
+      pose.direction.y * step * moving,
     );
     const hip = new T.Vector3(side * 0.13, hipY, 0);
     const ankle = foot.clone().add(new T.Vector3(0, 0.08, -0.015));
@@ -477,35 +598,40 @@ export function animateWorkerAvatar(root: T.Group, options: WorkerAnimation) {
     setLink(rig.legs[i].lower, knee, ankle, 0.38);
     rig.legs[i].foot!.position.copy(foot);
     rig.legs[i].foot!.rotation.set(
-      -Math.max(0, step) * moving * 0.14,
-      side * 0.06,
+      -Math.sin(swing * Math.PI) * moving * 0.1,
+      side * 0.035 + clamp(pose.direction.x, -0.5, 0.5) * 0.38,
       0,
     );
   }
 
-  const sweep = working && options.tool === 'broom';
-  const scoop = working && options.tool === 'scoop';
-  const workPhase = Math.sin(t * 8.5);
-  const bottom = new T.Vector3(
-    sweep ? 0.2 + workPhase * 0.3 : 0.35,
-    dumping
-      ? 0.93 + Math.sin(t * 8) * 0.045
-      : scoop
-        ? 0.035 + (1 + Math.sin(t * 7)) * 0.06
-        : 0.025,
-    dumping
-      ? 0.68
-      : sweep
-        ? 0.88
-        : scoop
-          ? 0.92 - Math.cos(t * 7) * 0.12
-          : 0.53,
+  const sweep = options.tool === 'broom';
+  const workPhase = Math.sin(t * 6.9);
+  const bottom = new T.Vector3(-0.37, 0.018, 0.59);
+  const top = new T.Vector3(0.075, 1.27 - crouch * 0.2, 0.22 + crouch * 0.1);
+  // The scene rotates this +Z-facing rig by PI+yaw. Camera +X is therefore
+  // worker-local -X: contact belongs on that near side, opposite the leaf bag.
+  // This cosmetic offset does not alter reach or target selection.
+  bottom.lerp(
+    new T.Vector3(
+      sweep ? -0.43 - workPhase * 0.25 : -0.43,
+      sweep ? 0.016 : 0.023 + (1 + Math.sin(t * 6.2)) * 0.055,
+      sweep ? 1.0 + Math.cos(t * 6.9) * 0.07 : 0.98 - Math.cos(t * 6.2) * 0.1,
+    ),
+    pose.work,
   );
-  const top = new T.Vector3(
-    sweep ? -0.11 + workPhase * 0.055 : -0.1,
-    dumping ? 1.15 : 1.27 - crouch * 0.2,
-    dumping ? 0.27 : 0.19 + crouch * 0.1,
+  top.lerp(
+    new T.Vector3(
+      0.05 - (sweep ? workPhase * 0.025 : 0),
+      1.24 - crouch * 0.2,
+      0.3,
+    ),
+    pose.work,
   );
+  bottom.lerp(
+    new T.Vector3(-0.37, 1.15 + Math.sin(t * 7.5) * 0.025, 1.02),
+    pose.dump,
+  );
+  top.lerp(new T.Vector3(0.015, 1.3, 0.34), pose.dump);
   const shaft = top.clone().sub(bottom);
   const toolRotation = new T.Quaternion().setFromUnitVectors(
     up,
@@ -516,30 +642,30 @@ export function animateWorkerAvatar(root: T.Group, options: WorkerAnimation) {
     tool.quaternion.copy(toolRotation);
     tool.scale.set(1, shaft.length() / 1.2, 1);
   }
-  rig.broom.visible = !pushing && !dumping && options.tool === 'broom';
-  rig.scoop.visible = !pushing && (dumping || options.tool === 'scoop');
+  const dumpTool = dumping || pose.dump > 0.08;
+  rig.broom.visible = !pushing && !dumpTool && options.tool === 'broom';
+  rig.scoop.visible = !pushing && (dumpTool || options.tool === 'scoop');
   const amount = clamp(Number.isFinite(options.bag) ? options.bag : 0, 0, 18);
   rig.load.count = Math.ceil(amount);
   rig.bagFill.visible = amount > 0;
   rig.bagFill.scale.y = 0.3 + amount / 18;
-  rig.bag.position.set(-0.29, hipY - 0.02, -0.02);
+  rig.bag.position.set(0.29, hipY - 0.02, -0.02);
   rig.bag.rotation.set(0, 0, gait * moving * 0.035);
 
   for (let i = 0; i < 2; i++) {
     const side = i ? 1 : -1;
-    const shoulder = new T.Vector3(side * 0.275, 0.46, 0).applyMatrix4(
+    const shoulder = new T.Vector3(side * 0.255, 0.47, 0).applyMatrix4(
       rig.torso.matrix,
     );
     // Both grips lie exactly on the same shaft. Cart mode supplies two separated handles.
-    const hand = pushing
-      ? new T.Vector3(side * 0.34, 1.05, 0.45)
-      : bottom.clone().addScaledVector(shaft, i ? 0.62 : 0.91);
+    const hand = bottom.clone().addScaledVector(shaft, i ? 0.93 : 0.69);
+    hand.lerp(new T.Vector3(side * 0.34, 1.05, 0.45), pose.push);
     const elbow = joint(
       shoulder,
       hand,
       0.32,
       0.34,
-      new T.Vector3(side, -0.15, -0.4),
+      new T.Vector3(side * 0.32, -1, -0.16),
     );
     setLink(rig.arms[i].upper, shoulder, elbow, 0.335);
     setLink(rig.arms[i].lower, elbow, hand, 0.33);

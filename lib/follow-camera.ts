@@ -1,4 +1,5 @@
 import * as T from 'three';
+import { clampViewPitch } from './view-controls';
 
 // Render-only collision volumes, captured before material batching. A small spatial
 // grid keeps camera queries independent of the street's triangle count.
@@ -98,6 +99,7 @@ export function createFollowCamera(collision: CameraCollision) {
       pitch: number,
       crouched: boolean,
       dt: number,
+      pushing = false,
     ) {
       const targetHeight = crouched ? 0.92 : 1.24;
       anchorHeight = T.MathUtils.lerp(
@@ -106,8 +108,9 @@ export function createFollowCamera(collision: CameraCollision) {
         1 - Math.exp(-dt * 12),
       );
       anchor.set(position.x, anchorHeight, position.z);
-      rotation.set(T.MathUtils.clamp(pitch - 0.16, -1, 0.25), yaw, 0);
-      offset.set(0.52, 0, crouched ? 2.8 : 3.15).applyEuler(rotation);
+      rotation.set(clampViewPitch(pitch, 'third') - 0.16, yaw, 0);
+      const crouchBlend = T.MathUtils.clamp((1.24 - anchorHeight) / 0.32, 0, 1);
+      offset.set(0.52, 0, T.MathUtils.lerp(3.15, 2.8, crouchBlend)).applyEuler(rotation);
       desired.copy(anchor).add(offset);
       desired.y = Math.max(0.32, desired.y);
       const available = collision.fraction(anchor, desired);
@@ -121,7 +124,7 @@ export function createFollowCamera(collision: CameraCollision) {
       // Keep the look direction stable, including when a wall leaves no boom.
       // The lateral offset places the worker to the left of the sightline.
       camera.rotation.set(rotation.x, yaw, 0, 'YXZ');
-      return { distance, avatarVisible: distance > 0.78 };
+      return { distance, avatarVisible: distance > (pushing ? 2.15 : 0.78) };
     },
   };
 }

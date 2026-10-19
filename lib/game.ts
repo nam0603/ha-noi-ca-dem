@@ -1,3 +1,10 @@
+import {
+  STATIC_PROP_COLLIDERS,
+  findStaticPropExit,
+  staticPropClearance,
+  staticPropsBlock,
+} from './street-colliders';
+
 export type Season = 'autumn' | 'rain' | 'mixed';
 export type Pace = 'shift' | 'relaxed';
 export type Tool = 'broom' | 'scoop';
@@ -14,6 +21,11 @@ export type Input = {
   tool?: Tool;
   ping?: boolean;
 };
+export type InputFrame = { input: Input; dt: number };
+// A bounded recent history compensates normal HTTP round trips, never an outage.
+export const INPUT_HISTORY_SECONDS = 1;
+export const INPUT_STALE_SECONDS = 1.5;
+export const INPUT_HISTORY_FRAMES = 32;
 export type Player = {
   id: string;
   name: string;
@@ -180,7 +192,7 @@ export const distance = (
 ) => Math.hypot(a.x - b.x, a.y - b.y);
 export const rainy = (g: Game) =>
   g.season === 'rain' || (g.season === 'mixed' && g.time >= g.rainAt);
-export function walkable(x: number, y: number, r = 10) {
+function walkableBase(x: number, y: number, r: number) {
   return (
     x >= r &&
     x <= 1280 - r &&
@@ -192,6 +204,9 @@ export function walkable(x: number, y: number, r = 10) {
     ) &&
     !TREES.some((t) => Math.hypot(t.x - x, t.y - y) < r + 3)
   );
+}
+export function walkable(x: number, y: number, r = 10) {
+  return walkableBase(x, y, r) && !staticPropsBlock(x, y, r);
 }
 export function waterDepth(g: Game, p: { x: number; y: number }) {
   if (!rainy(g)) return 0;
@@ -464,7 +479,35 @@ export function releaseOrphanCarts(g: Game, now?: number) {
     }
   });
 }
+/** Keep old format-4 clutter reachable after introducing shared prop footprints. */
+export function repairStaticPropOverlaps(g: Game) {
+  const exit = (object: { x: number; y: number }, radius: number) =>
+    walkableBase(object.x, object.y, radius) &&
+    staticPropsBlock(object.x, object.y, radius)
+      ? findStaticPropExit(object.x, object.y, radius, (x, y) =>
+          walkable(x, y, radius),
+        )
+      : null;
+  for (const object of [...g.leaves, ...g.piles]) {
+    const next = exit(object, 2);
+    if (next) {
+      object.x = next.x;
+      object.y = next.y;
+    }
+  }
+  for (const cart of g.carts) {
+    const next = exit(cart, 15);
+    if (!next) continue;
+    // The cart changes position; players keep their positions and bags exactly.
+    cart.owner = null;
+    for (const player of g.players)
+      if (player.pushing === cart.id) player.pushing = null;
+    cart.x = next.x;
+    cart.y = next.y;
+  }
+}
 export function tickWorld(g: Game, now: number) {
+  repairStaticPropOverlaps(g);
   now = Math.max(now, g.lastTick);
   const dt = clamp((now - g.lastTick) / 1000, 0, 5);
   g.lastTick = now;
@@ -514,6 +557,36 @@ export function clearPath(
     const t = i / steps;
     if (!walkable(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, radius))
       return false;
+  }
+  return true;
+}
+/**
+ * Movement can leave a newly solid prop when an older format-4 snapshot starts
+ * inside it. Every sampled step must keep or reduce its existing overlap; other
+ * props and the original world collisions remain solid. No state is relocated.
+ */
+export function clearMovementPath(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+  radius: number,
+) {
+  const steps = Math.max(1, Math.ceil(distance(a, b) / 4));
+  const previous = STATIC_PROP_COLLIDERS.map((prop) =>
+    staticPropClearance(prop, a.x, a.y),
+  );
+  const escaping = previous.map((clearance) => clearance < radius);
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps,
+      x = a.x + (b.x - a.x) * t,
+      y = a.y + (b.y - a.y) * t;
+    if (!walkableBase(x, y, radius)) return false;
+    for (let j = 0; j < STATIC_PROP_COLLIDERS.length; j++) {
+      const clearance = staticPropClearance(STATIC_PROP_COLLIDERS[j], x, y);
+      if (escaping[j]) {
+        if (clearance < previous[j] - 1e-7) return false;
+        previous[j] = clearance;
+      } else if (clearance < radius) return false;
+    }
   }
   return true;
 }
@@ -707,9 +780,9 @@ export function movePlayer(g: Game, p: Player, input: Input, dt: number) {
       dy = (input.y / Math.max(1, len)) * speed * dt;
     if (input.yaw === undefined) p.face = Math.atan2(dy, dx);
     const can = (x: number, y: number) =>
-      clearPath(p, { x, y }, 10) &&
+      clearMovementPath(p, { x, y }, 10) &&
       (!cart ||
-        clearPath(
+        clearMovementPath(
           cart,
           { x: x + Math.cos(p.face) * 26, y: y + Math.sin(p.face) * 26 },
           15,
@@ -721,7 +794,7 @@ export function movePlayer(g: Game, p: Player, input: Input, dt: number) {
     p.cartDistance += Math.hypot(p.x - oldX, p.y - oldY) * SCALE;
     const nx = p.x + Math.cos(p.face) * 26,
       ny = p.y + Math.sin(p.face) * 26;
-    if (clearPath(cart, { x: nx, y: ny }, 15)) {
+    if (clearMovementPath(cart, { x: nx, y: ny }, 15)) {
       cart.x = nx;
       cart.y = ny;
       cart.face = p.face;
@@ -849,6 +922,68 @@ export function applyInput(
   p.lastInput = now;
   movePlayer(g, p, input, dt);
 }
+export function applyInputBatch(
+  g: Game,
+  id: string,
+  frames: InputFrame[],
+  now: number,
+  seq: number,
+) {
+  const p = g.players.find((p) => p.id === id);
+  if (!p) throw new Error('Bạn đã rời phòng. Hãy vào lại.');
+  p.lastSeen = Math.max(p.lastSeen, now);
+  now = Math.max(now, p.lastInput);
+  if (seq <= p.seq) return;
+  p.seq = seq;
+  const elapsed = (now - p.lastInput) / 1000;
+  p.lastInput = now;
+  if (!frames.length) {
+    p.working = false;
+    p.crouched = false;
+    return;
+  }
+  const latest = frames[frames.length - 1].input;
+  if (elapsed > INPUT_STALE_SECONDS) {
+    // The first packet after a stall cannot turn the missing time into held work.
+    movePlayer(
+      g,
+      p,
+      { ...latest, x: 0, y: 0, work: false, grab: false, mask: false, ping: false },
+      0,
+    );
+    return;
+  }
+  let budget = Math.min(INPUT_HISTORY_SECONDS, Math.max(0, elapsed));
+  const total = frames.reduce((sum, frame) => sum + frame.dt, 0);
+  let skip = Math.max(0, total - budget);
+  for (const frame of frames) {
+    const retainedStart = skip <= 1e-6;
+    const discarded = Math.min(skip, frame.dt);
+    skip -= discarded;
+    let duration = Math.min(budget, frame.dt - discarded);
+    // Edges belong to the start of their sample, not to a retained tail.
+    let first = retainedStart && discarded < 1e-6;
+    if (duration <= 1e-6) {
+      if (frame.dt === 0 && first)
+        movePlayer(g, p, frame.input, 0);
+      continue;
+    }
+    while (duration > 1e-6) {
+      const step = Math.min(0.05, duration);
+      movePlayer(
+        g,
+        p,
+        first
+          ? frame.input
+          : { ...frame.input, grab: false, mask: false, ping: false },
+        step,
+      );
+      first = false;
+      duration -= step;
+      budget -= step;
+    }
+  }
+}
 export function contextHint(g: Game, p: Player) {
   const task = taskAt(g, p);
   if (task) return task.label;
@@ -895,5 +1030,7 @@ export function onboardingHint(g: Game, p: Player) {
     return '03 · Nhìn vào xe xanh gần bạn, giữ E để đổ túi. Cả chổi và xẻng đều đổ được.';
   if (p.swept > 0)
     return '02 · Nhấn 2 chọn xẻng. Nhìn xuống đống lá, giữ E để hốt.';
+  if (p.tool === 'scoop')
+    return '01 · Nhấn 1 chọn chổi. Lại gần lá, giữ C và E để quét.';
   return '01 · Lá ở trước mặt: giữ C để cúi, giữ E hoặc chuột trái để quét một vùng.';
 }

@@ -49,7 +49,17 @@ let launchedBrowser;
     { timeout: 60000 },
   );
   await page.getByRole('button', { name: 'Mùa lá rụng' }).click();
+  await page.waitForFunction(() =>
+    document
+      .querySelector('.chapter-picker button.selected')
+      ?.textContent.includes('Mùa lá rụng'),
+  );
   await page.getByRole('button', { name: 'Ca làm · 8 phút' }).click();
+  await page.waitForFunction(() =>
+    document
+      .querySelector('.pace-picker button.selected')
+      ?.textContent.includes('Ca làm · 8 phút'),
+  );
   await page.getByRole('button', { name: 'Vào phố · Chơi một mình' }).click();
   await page.evaluate(() => {
     window.testState = () => {
@@ -65,6 +75,16 @@ let launchedBrowser;
       throw Error('no game ref');
     };
   });
+  const fixture = await page.evaluate(() => ({
+    season: window.testState().season,
+    pace: window.testState().pace,
+  }));
+  assert.deepEqual(
+    fixture,
+    { season: 'autumn', pace: 'shift' },
+    'Confirm committed UI fixture before the walking controller',
+  );
+  console.log('confirmed fixture', fixture);
   function waypoint(p, target, radius) {
     const x = Math.round(p.x / 20),
       y = Math.round(p.y / 20),
@@ -277,6 +297,8 @@ let launchedBrowser;
   const result = {
     result: 'won through UI inputs; result screen; restart; menu',
     simulatedSeconds: g.time,
+    season: g.season,
+    pace: g.pace,
     wallSeconds: (Date.now() - started) / 1000,
     score: g.score,
     cleanZones: g.zones.filter((z) => z.completedAt !== null).length,

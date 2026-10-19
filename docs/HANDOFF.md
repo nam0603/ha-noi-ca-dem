@@ -1,3 +1,7 @@
+# Góc phố 0.7
+
+Xem `POLISH-0.7.md` cho đợt sửa sau review. `lib/input-sync.ts` lấy mẫu/bỏ lịch sử stale và tiếp tục sequence từ ACK; API nhận `frames` tùy chọn, simulation `applyInputBatch` giữ trusted elapsed/replay/round/CAS và input legacy. Không prediction hoặc WebSocket. `lib/view-controls.ts` chặn pitch theo view ngay ở handler. `lib/street-colliders.ts` giữ vị trí/footprint dùng chung với scene; tickWorld sửa overlap rác/xe của snapshot cũ mà không mất khối lượng, người cũ tự đi ra mà không teleport. `lib/corner-detail.ts` dựng một mặt tiền mẫu gần điểm tập kết, giữ vùng làm việc trống và pool bốn đèn. Rig lấy hướng/quãng đường render để diễn bước; HUD dời chi tiết khu sang bản đồ. Format vẫn4, schema D1 không đổi.
+
 # Camera và nhân vật 0.6
 
 Người dùng đã yêu cầu đổi sang góc thứ ba mặc định và giữ V để so sánh góc thứ nhất. `lib/follow-camera.ts` thu bounds của vật cản tĩnh trước khi batch; lưới không gian và khoảng đệm 0,22 m tránh raycast cả phố mỗi frame. Camera thu ngay trước vật cản và hồi khoảng cách dần, hạ điểm theo khi cúi. Foliage instanced/đồ vật động không thuộc tập tránh camera. Khi không đủ chỗ, ẩn thân local để không che màn hình.

@@ -1,4 +1,4 @@
-Bản camera mới 0.6: xem `THIRD-PERSON-0.6.md`. Các số liệu dưới đây lưu kết quả đợt 0.4; hình ảnh 0.5 ở `VISUAL-PREVIEW-0.5.md`.
+Bản sửa mới 0.7: xem `POLISH-0.7.md`; camera 0.6 ở `THIRD-PERSON-0.6.md`. Các số liệu dưới đây lưu kết quả đợt 0.4; hình ảnh 0.5 ở `VISUAL-PREVIEW-0.5.md`.
 
 # Kiểm chứng 0.4 — 18/10/2026 (Asia/Saigon)
 

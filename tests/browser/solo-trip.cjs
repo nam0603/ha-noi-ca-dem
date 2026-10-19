@@ -43,6 +43,11 @@ let launchedBrowser;
     () => !document.querySelector('button.primary')?.disabled,
   );
   await page.getByRole('button', { name: 'Mùa lá rụng' }).click();
+  await page.waitForFunction(() =>
+    document
+      .querySelector('.chapter-picker button.selected')
+      ?.textContent.includes('Mùa lá rụng'),
+  );
   await page.getByRole('button', { name: 'Vào phố · Chơi một mình' }).click();
   await page.evaluate(() => {
     window.testState = () => {
@@ -60,6 +65,7 @@ let launchedBrowser;
   });
   const state = () => page.evaluate(() => window.testState());
   const mine = () => page.evaluate(() => window.testState().players[0]);
+  assert.equal((await state()).season, 'autumn');
   const wait = async (pred) => {
     await page.waitForFunction(pred, null, { timeout: 90000, polling: 250 });
   };

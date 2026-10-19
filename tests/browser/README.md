@@ -21,4 +21,18 @@ Các test dùng WebGL phần mềm ở cloud. Co-op/full-shift dùng viewport CS
 
 `visual.cjs` kiểm tra asset WebP trả 200, cảnh phố/cửa hàng, chổi/xẻng, chuyển chất lượng cao → thấp và vào cảnh mưa qua UI thực; lưu ảnh 960×600 và console errors. Dùng ảnh để đánh giá, không dùng unit test hoặc một con số FPS software renderer để kết luận đẹp/mượt.
 
+`polish.cjs` kiểm tra hồi quy 0.7: đảo pitch ở hai giới hạn, V, đi tới bảng với collider chung, thay nội dung ping3D trước khi hết hạn; hai phiên kiểm tra leave thất bại/vào lại, request có delay/jitter chủ động, offline trên25giây/chuyển host/vào lại thủ công. Chạy `POLISH_SCENARIO=visual node tests/browser/polish.cjs` hoặc `POLISH_SCENARIO=network node tests/browser/polish.cjs` để tách lượt; `GAME_URL` mặc định local5173. Các hook chỉ đọc state/matrix/canvas text, thao tác qua UI/input thật; delay/offline là fault injection, không phải benchmark Internet.
+
 Khi dựng lại `dist` thì dừng và khởi động lại Worker local trước lượt kiểm tra kế tiếp để HTML/asset manifest cùng một bản.
+
+## Kiểm tra HTTP không cần GPU
+
+Từ gốc repository, chạy `npm test` trước để tạo module helper, áp dụng D1 local bằng `npm run db:local` nếu chưa có, rồi giữ Worker local ở cổng 5173 (`npm run dev` hoặc build/start như trên). Sau đó:
+
+```bash
+node tests/http/input-history.mjs
+```
+
+Script chỉ gọi `http://127.0.0.1:5173`, không có tùy chọn URL ngoài. Hai client kiểm tra lịch sử input 20 Hz dưới delay chủ động, ACK/sequence khi leave thất bại rồi vào lại, khối lượng rác/sức chứa, và host im lặng trên 25 giây trong khi guest poll rồi vào lại thủ công. Kết quả lưu ở `work/http-input-history-result.json`; cần khoảng 35 giây, không dùng browser hoặc sửa trực tiếp DB/state.
+
+Đây là kiểm tra HTTP/Worker/D1 theo **thời gian input được giữ lại**, không xác nhận UI, GPU hay công bằng tốc độ theo thời gian thực dưới jitter. Lượt tham chiếu 0.7 có delay thay đổi 120/440/180/600 ms đã trim khoảng 21% lịch sử; con số này là kết quả một lượt fault injection, không phải mức cố định hoặc benchmark Internet.

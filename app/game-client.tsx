@@ -52,6 +52,8 @@ import {
   type Input,
 } from '@/lib/game';
 import type { Look, Settings } from '@/lib/scene3d';
+import { createInputHistory, nextInputSequence } from '@/lib/input-sync';
+import { clampViewPitch } from '@/lib/view-controls';
 const choices = [
   {
     id: 'mixed' as Season,
@@ -74,6 +76,9 @@ const choices = [
 ];
 type Mode = 'menu' | 'solo' | 'online';
 type Panel = 'none' | 'pause' | 'help' | 'settings';
+const coarsePointer = () =>
+  typeof window !== 'undefined' &&
+  window.matchMedia('(pointer: coarse)').matches;
 const initialSettings: Settings = {
   quality: 'high',
   view: 'third',
@@ -95,6 +100,7 @@ export default function GameClient() {
     [panel, setPanel] = useState<Panel>('none'),
     [locked, setLocked] = useState(false),
     [fallback, setFallback] = useState(false),
+    [touchUI, setTouchUI] = useState(false),
     [map, setMap] = useState(false),
     [copied, setCopied] = useState(false),
     [settings, setSettings] = useState<Settings>(initialSettings),
@@ -125,22 +131,28 @@ export default function GameClient() {
     ambience = useRef<GainNode | null>(null),
     lastSound = useRef(0),
     heardAction = useRef(0);
+  const inputHistory = useRef<ReturnType<typeof createInputHistory> | null>(
+    null,
+  );
   function update(g: Game) {
     if (g.round > gref.current.round) {
       toolRef.current = 'broom';
       heardAction.current = 0;
       pending.current = { mask: false, grab: false, ping: false };
       keys.current.clear();
+      inputHistory.current?.clear(performance.now());
       look.current = { yaw: -Math.PI / 2, pitch: -0.05 };
     }
     gref.current = g;
     setGame({ ...g });
   }
   function changeMode(m: Mode) {
+    inputHistory.current?.clear(performance.now());
     mref.current = m;
     setMode(m);
   }
   function showPanel(p: Panel) {
+    inputHistory.current?.clear(performance.now());
     pref.current = p;
     setPanel(p);
     keys.current.clear();
@@ -160,6 +172,10 @@ export default function GameClient() {
         work: false,
         sprint: false,
         mask: false,
+        grab: false,
+        ping: false,
+        crouch: false,
+        tool: toolRef.current,
         yaw: look.current.yaw,
         pitch: look.current.pitch,
       };
@@ -241,6 +257,11 @@ export default function GameClient() {
   async function capture() {
     showPanel('none');
     initAudio();
+    if (coarsePointer()) {
+      fallbackRef.current = true;
+      setFallback(true);
+      return;
+    }
     try {
       if (!canvas.current?.requestPointerLock) throw new Error('unavailable');
       await canvas.current.requestPointerLock();
@@ -285,6 +306,7 @@ export default function GameClient() {
     if (typeof data.revision === 'number' && data.revision < s.revision)
       return gref.current;
     s.revision = data.revision ?? 0;
+    s.seq = nextInputSequence(data.game, s.id, s.seq);
     return data.game;
   }
   function actionSound(kind: string) {
@@ -316,6 +338,7 @@ export default function GameClient() {
   }
 
   useEffect(() => {
+    setTouchUI(coarsePointer());
     session.current.id = crypto.randomUUID();
     session.current.token = crypto.randomUUID();
     try {
@@ -546,6 +569,7 @@ export default function GameClient() {
     };
     const up = (e: KeyboardEvent) => keys.current.delete(e.key.toLowerCase());
     const clear = () => {
+      inputHistory.current?.clear(performance.now());
       keys.current.clear();
       mouse.current.work = false;
       mouse.current.drag = false;
@@ -582,12 +606,9 @@ export default function GameClient() {
           Math.sin(look.current.yaw),
           Math.cos(look.current.yaw),
         );
-        look.current.pitch = Math.max(
-          -1.35,
-          Math.min(
-            1.05,
-            look.current.pitch - dy * 0.002 * sref.current.sensitivity,
-          ),
+        look.current.pitch = clampViewPitch(
+          look.current.pitch - dy * 0.002 * sref.current.sensitivity,
+          sref.current.view,
         );
       }
       mouse.current.x = e.clientX;
@@ -605,7 +626,8 @@ export default function GameClient() {
     const lockError = () => {
       fallbackRef.current = true;
       setFallback(true);
-      setError('Dùng chuột phải và kéo để nhìn, chuột trái để quét.');
+      if (!coarsePointer())
+        setError('Dùng chuột phải và kéo để nhìn, chuột trái để quét.');
     };
     document.addEventListener('pointerlockerror', lockError);
     document.addEventListener('pointerlockchange', change);
@@ -624,14 +646,48 @@ export default function GameClient() {
     let active = true,
       timer: ReturnType<typeof setTimeout>,
       failures = 0;
+    const history = createInputHistory(performance.now());
+    inputHistory.current = history;
+    let sampledRound = gref.current.round;
+    const sample = () => {
+      const now = performance.now();
+      if (sampledRound !== gref.current.round) {
+        history.clear(now);
+        sampledRound = gref.current.round;
+      }
+      const captured =
+        gref.current.status === 'playing' &&
+        pref.current === 'none' &&
+        (lockRef.current || fallbackRef.current);
+      history.sample(input(captured), now, captured);
+    };
+    const sampler = setInterval(sample, 50);
     async function sync() {
       const t = performance.now();
       try {
         const playing = gref.current.status === 'playing';
-        const inp = input(playing);
+        sample();
+        const inp = input(false);
+        const sampled = history.take();
+        const frames = sampled.length
+          ? sampled
+          : [
+              {
+                input: {
+                  ...inp,
+                  x: 0,
+                  y: 0,
+                  work: false,
+                  grab: false,
+                  mask: false,
+                  ping: false,
+                },
+                dt: 0,
+              },
+            ];
         const g = await api(
           playing ? 'input' : 'poll',
-          playing ? { input: inp, seq: session.current.seq++ } : {},
+          playing ? { input: inp, frames, seq: session.current.seq++ } : {},
         );
         if (active) {
           update(g);
@@ -648,15 +704,24 @@ export default function GameClient() {
           mouse.current.work = false;
           touch.current.work = false;
           pending.current = { mask: false, grab: false, ping: false };
+          history.clear(performance.now());
           setError(e instanceof Error ? e.message : 'Mất kết nối phòng chơi.');
         }
       }
-      if (active) timer = setTimeout(sync, Math.min(1500, 90 + failures * 250));
+      if (active)
+        timer = setTimeout(
+          sync,
+          failures
+            ? Math.min(1500, 90 + failures * 250)
+            : Math.max(0, 90 - (performance.now() - t)),
+        );
     }
     void sync();
     return () => {
       active = false;
       clearTimeout(timer);
+      clearInterval(sampler);
+      if (inputHistory.current === history) inputHistory.current = null;
     };
   }, [mode]);
 
@@ -692,7 +757,11 @@ export default function GameClient() {
         code: code.trim().toUpperCase(),
       });
       if (gen !== generation.current) return;
-      session.current.seq = 0;
+      session.current.seq = nextInputSequence(
+        g,
+        session.current.id,
+        session.current.seq,
+      );
       update(g);
       changeMode('online');
       look.current = { yaw: -Math.PI / 2, pitch: -0.05 };
@@ -748,6 +817,7 @@ export default function GameClient() {
   }
   function setOption(patch: Partial<Settings>) {
     const next = { ...sref.current, ...patch };
+    look.current.pitch = clampViewPitch(look.current.pitch, next.view);
     sref.current = next;
     setSettings(next);
     try {
@@ -776,6 +846,7 @@ export default function GameClient() {
     playing = mode !== 'menu' && game.status === 'playing',
     remaining = Math.max(0, Math.ceil(game.duration - game.time)),
     depth = p ? waterDepth(game, p) : 0;
+  const firstTripHint = p ? onboardingHint(game, p) : null;
   const touchControl = (
     prop: 'x' | 'y' | 'work' | 'crouch',
     value: number | boolean,
@@ -840,12 +911,9 @@ export default function GameClient() {
             Math.sin(look.current.yaw),
             Math.cos(look.current.yaw),
           );
-          look.current.pitch = Math.max(
-            -1.35,
-            Math.min(
-              1.05,
-              look.current.pitch - (t.clientY - mouse.current.y) * 0.005,
-            ),
+          look.current.pitch = clampViewPitch(
+            look.current.pitch - (t.clientY - mouse.current.y) * 0.005,
+            sref.current.view,
           );
           mouse.current.x = t.clientX;
           mouse.current.y = t.clientY;
@@ -971,7 +1039,8 @@ export default function GameClient() {
               <ArrowUpRight size={18} />
             </button>
             <div className="menu-note">
-              Quét → Hốt → Chở → Bàn giao <span>•</span> Chuột & bàn phím
+              Quét → Hốt → Chở → Bàn giao <span>•</span>{' '}
+              {touchUI ? 'Chạm & vuốt' : 'Chuột & bàn phím'}
             </div>
           </section>
           <aside className="lobby-panel">
@@ -1104,28 +1173,25 @@ export default function GameClient() {
               </button>
             )}
           </div>
-          {p && onboardingHint(game, p) && (
-            <aside className="onboarding" aria-live="polite">
-              {onboardingHint(game, p)}
-            </aside>
+          {firstTripHint && (
+            <div className="route-guide" aria-label="Chuyến bàn giao đầu tiên">
+              <span className={p && p.swept > 0 ? 'done' : ''}>1 · QUÉT</span>
+              <i>→</i>
+              <span className={p && p.picked > 0 ? 'done' : ''}>2 · HỐT</span>
+              <i>→</i>
+              <span
+                className={
+                  game.carts.some((c) => c.stored > 0) || game.score > 0
+                    ? 'done'
+                    : ''
+                }
+              >
+                3 · ĐỔ XE
+              </span>
+              <i>→</i>
+              <span className={game.score > 0 ? 'done' : ''}>4 · TẬP KẾT</span>
+            </div>
           )}
-          <div className="route-guide">
-            <span className={p && p.swept > 0 ? 'done' : ''}>1 · QUÉT</span>
-            <i>→</i>
-            <span className={p && p.picked > 0 ? 'done' : ''}>2 · HỐT</span>
-            <i>→</i>
-            <span
-              className={
-                game.carts.some((c) => c.stored > 0) || game.score > 0
-                  ? 'done'
-                  : ''
-              }
-            >
-              3 · ĐỔ XE
-            </span>
-            <i>→</i>
-            <span className={game.score > 0 ? 'done' : ''}>4 · TẬP KẾT</span>
-          </div>
           <div
             className={'reticle ' + (task ? 'targeted' : '')}
             hidden={settings.view === 'third'}
@@ -1212,7 +1278,11 @@ export default function GameClient() {
           )}
           {p && (
             <div className="interaction">
-              <div className="interaction-text">{contextHint(game, p)}</div>
+              <div className="interaction-text">
+                {task
+                  ? contextHint(game, p)
+                  : (firstTripHint ?? contextHint(game, p))}
+              </div>
               {task && (
                 <div className="action-progress">
                   <i style={{ width: task.progress * 100 + '%' }} />
@@ -1232,9 +1302,9 @@ export default function GameClient() {
                 </div>
               )}
               <div className="micro-help">
-                WASD di chuyển <i /> V đổi góc <i /> C cúi <i /> 1 chổi · 2 xẻng{' '}
-                <i /> Q đẩy / buông xe <i /> F khẩu trang <i /> G gọi giúp <i />{' '}
-                Esc nghỉ
+                <span>V · Đổi góc</span>
+                <span>M · Bản đồ</span>
+                <span>H · Hướng dẫn</span>
               </div>
             </div>
           )}
@@ -1397,6 +1467,25 @@ export default function GameClient() {
                 <span>□ Tập kết</span>
                 <span>● Cống</span>
               </small>
+              <div className="map-zones">
+                {game.zones.map((zone) => (
+                  <div
+                    key={zone.id}
+                    className={zone.completedAt !== null ? 'clean' : ''}
+                  >
+                    <span>
+                      {zone.completedAt !== null ? '✓' : '○'} {zone.name}
+                    </span>
+                    <small>
+                      {zone.completedAt !== null
+                        ? zone.cleanUntil > game.time
+                          ? `Nghỉ lá ${Math.ceil(zone.cleanUntil - game.time)}s`
+                          : 'Đã hoàn thành'
+                        : `Còn ${Math.ceil(zoneRemaining(game, zone))} · hốt ${Math.floor(zone.picked)}/8+`}
+                    </small>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
           {!locked && !fallback && panel === 'none' && !graphicsError && (
@@ -1821,14 +1910,16 @@ export default function GameClient() {
       <footer className="game-footer">
         <span>
           {playing
-            ? fallback
+            ? touchUI
+              ? 'VUỐT ĐỂ QUAN SÁT'
+              : fallback
               ? 'KÉO CHUỘT PHẢI ĐỂ NHÌN'
               : 'DI CHUỘT ĐỂ QUAN SÁT'
             : 'MỖI CHIẾC LÁ, MỘT CHÚT BÌNH YÊN.'}
         </span>
         <span>
           {mode === 'online' ? `${ping} MS · ` : ''}
-          {fps} FPS <i /> THEO BƯỚC · PREVIEW 0.6
+          {fps} FPS <i /> GÓC PHỐ · PREVIEW 0.7
         </span>
       </footer>
     </div>
