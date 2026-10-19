@@ -1,4 +1,38 @@
-# Bàn giao bản 0.3
+# Góc phố 0.7
+
+Xem `POLISH-0.7.md` cho đợt sửa sau review. `lib/input-sync.ts` lấy mẫu/bỏ lịch sử stale và tiếp tục sequence từ ACK; API nhận `frames` tùy chọn, simulation `applyInputBatch` giữ trusted elapsed/replay/round/CAS và input legacy. Không prediction hoặc WebSocket. `lib/view-controls.ts` chặn pitch theo view ngay ở handler. `lib/street-colliders.ts` giữ vị trí/footprint dùng chung với scene; tickWorld sửa overlap rác/xe của snapshot cũ mà không mất khối lượng, người cũ tự đi ra mà không teleport. `lib/corner-detail.ts` dựng một mặt tiền mẫu gần điểm tập kết, giữ vùng làm việc trống và pool bốn đèn. Rig lấy hướng/quãng đường render để diễn bước; HUD dời chi tiết khu sang bản đồ. Format vẫn4, schema D1 không đổi.
+
+# Camera và nhân vật 0.6
+
+Người dùng đã yêu cầu đổi sang góc thứ ba mặc định và giữ V để so sánh góc thứ nhất. `lib/follow-camera.ts` thu bounds của vật cản tĩnh trước khi batch; lưới không gian và khoảng đệm 0,22 m tránh raycast cả phố mỗi frame. Camera thu ngay trước vật cản và hồi khoảng cách dần, hạ điểm theo khi cúi. Foliage instanced/đồ vật động không thuộc tập tránh camera. Khi không đủ chỗ, ẩn thân local để không che màn hình.
+
+`lib/worker-avatar.ts` tạo rig toàn thân, tay bám cán, chân/gối/khuỷu, dụng cụ đúng loại/tải, tư thế làm việc/đẩy xe. Cả local và đồng đội dùng cùng rig; pose lấy từ trạng thái game, không ghi ngược. Mỗi avatar có vật liệu riêng và được dispose khi rời. Góc thứ nhất vẫn dùng viewScene với chổi/xẻng/tay trước mặt.
+
+`Settings.view` chỉ lưu local (`third` mặc định cho máy mới hoặc settings cũ thiếu trường này); không đưa vào protocol/phòng. Chuột quay hướng nhân vật ở cả hai chế độ. C tiếp tục ép pitch input xuống như luật cũ, nhưng không ép camera thứ ba chúc xuống. V không tiêu thụ thao tác C/E/Q đang giữ. Xem `THIRD-PERSON-0.6.md` cho kiểm chứng và giới hạn, `PREVIEW.md` cho deployment.
+
+# Đợt hình ảnh 0.5
+
+Gameplay và API vẫn ở định dạng 4. `lib/street-materials.ts` tạo bộ bản đồ PBR dùng chung; `public/textures/hanoi-surfaces.webp` là atlas màu mới, nguồn ở `ASSETS.md`. `lib/street-detail.ts` dựng thêm chi tiết mặt tiền và đèn đường. `lib/scene3d.ts` giữ camera/dụng cụ/giao tiếp render cũ, đổi ánh sáng đêm và mô hình hiển thị; cấu hình cao dùng tối đa bốn đèn chiếu gần camera cùng bóng directional, cấu hình thấp bỏ đèn động và bóng, giữ ánh sáng mềm có sẵn. Các light pool là xấp xỉ mỹ thuật, không phải phản xạ hình học thực. Batch có xử lý cả geometry indexed/non-indexed; props cực nhỏ không bo góc nhiều đỉnh. Giữ Site production, cập nhật Site preview riêng theo `PREVIEW.md`.
+
+Xem `VISUAL-PREVIEW-0.5.md` cho bằng chứng kiểm tra và giới hạn.
+
+# Bàn giao bản 0.4
+
+Tiếp tục source 0.3 tại cuối tài liệu. Bản hiện tại giữ Three.js/Vinext/Cloudflare/D1 và các điều khiển gốc.
+
+- `lib/game.ts`: vùng quét dùng `inSweep`/`clearPath`, bảo toàn lượng rác khi hốt/đổ/bàn giao/rời phòng; ba khu và thời gian nghỉ 75 giây; ping hữu hạn. Túi 18, xe 36, tối đa 8 người.
+- `app/api/game/route.ts`: format **4**, `round` phải khớp khi input; trả snapshot đã lưu khi ca đổi. Không đổi migration D1, session token/sequence/CAS vẫn giữ. Phòng format 3 trả 409 kèm thông báo tạo phòng mới.
+- `app/game-client.tsx`: hướng dẫn chuyến đầu, tiến độ khu, phản hồi hành động, ping, latency/lỗi polling/FPS; timeout 6 giây, backoff tới 1,5 giây. Lobby/kết quả chỉ poll để theo kịp ca mới. Snapshot của phiên/mã phòng cũ không cập nhật UI hiện tại. Solo chia bước tối đa 50 ms, tối đa 350 ms/khung để giữ hành vi khi FPS giảm.
+- `lib/scene3d.ts`: tám mặt tiền chủ đạo, dụng cụ và tải xẻng, tên/ping trong 3D; nội suy camera/xe/đồng đội/lá là phần hiển thị, không tự sinh rác. Chế độ thấp tắt bóng và giảm mật độ pixel như trước.
+- Ngắt input >3 giây nhả xe ở request kế tiếp; hết hiện diện 25 giây trả túi thành đống và chuyển host khi cần. Không có tác vụ nền chạy khi cả phòng không gửi request.
+- Script setup dùng cache project, vẫn pnpm 11.25.0/frozen lockfile. `npm test` chạy trực tiếp entry `node:test` để hiện đầy đủ bài và exit status trong cloud; loại `work/` khỏi TypeScript để scratch không đi vào kiểm tra source.
+- Tài liệu bằng chứng hiện tại: `VALIDATION.md`; tài nguyên: `ASSETS.md`; browser scripts tùy chọn: `tests/browser/` (cần Playwright/Chromium có sẵn).
+
+Chưa triển khai production hoặc đổi quyền demo. Chưa có playtest con người/tám thiết bị, số FPS GPU thật hay độ trễ Internet. Browser cloud dùng SwiftShader; đọc điều kiện đo trước khi suy luận hiệu năng.
+
+---
+
+# Lịch sử: bàn giao bản 0.3
 
 ## Nguồn và phạm vi
 

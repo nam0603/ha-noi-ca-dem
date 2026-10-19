@@ -1,0 +1,71 @@
+# Preview chơi thử cố định
+
+Địa chỉ: https://ha-noi-ca-dem-preview.namxuan05.chatgpt.site
+
+Bản đang xuất bản: **0.7 · Góc phố** (20/10/2026, giờ Việt Nam). Nhấn Ctrl+Shift+R nếu tab cũ vẫn hiện 0.6; nhãn cuối màn hình mới là `GÓC PHỐ · PREVIEW 0.7`. Camera thứ ba mặc định, **V** đổi sang thứ nhất hoặc đổi trong Cài đặt. Chọn `Cao · Có bóng` để xem đủ ánh sáng/bề mặt; chọn `Nhẹ · Không bóng` nếu máy chạy nặng. Báo cáo thay đổi, lệnh kiểm tra và giới hạn: `POLISH-0.7.md`.
+
+Máy chơi chỉ cần Chrome/Edge và kết nối Internet. Preview bắt đầu ở chế độ riêng tư của chủ Site; đăng nhập bằng tài khoản ChatGPT sở hữu Site khi được yêu cầu. Quyền mời bạn của bản production không tự chuyển sang preview.
+
+## Hai môi trường
+
+- `.openai/hosting.json` giữ Site production `appgprj_6ad033552ff881918de1dfc4ecf75670` và địa chỉ production cũ.
+- `.openai/preview.json` giữ Site chơi thử riêng `appgprj_6ad441f7c1108191b3bb10887f2bbebc`. Site này có D1 riêng; phòng/mã phòng không dùng chung với production.
+- Sites gọi mọi địa chỉ đã xuất bản là live/production. Trong dự án này, Site thứ hai được dùng làm môi trường preview; không cập nhật Site production cũ.
+
+## Cập nhật sau mỗi bản sửa
+
+Đây là bước bàn giao của tác vụ sửa game, không phải GitHub Actions tự triển khai khi có push.
+
+1. Sửa source game trong repository này. Chạy `npm test`, `npm run typecheck`, `npm run build` và các kiểm tra hành vi phù hợp. Commit source đã kiểm tra.
+2. Dùng workflow của plugin Sites cho **Site preview đã có**: đọc trạng thái/quyền hiện tại, lấy credential ngắn hạn, mở source của đúng Site vào checkout riêng. Không tạo thêm Site.
+3. Chuyển source đã commit sang checkout preview bằng `git archive`; chỉ lấy file Git theo dõi. Giữ danh tính Git của source Site và ghi đè `project_id` trong manifest của checkout bằng giá trị `.openai/preview.json`. Giữ các binding `d1`/`r2` hiện tại. Không chuyển `.git`, `.env*`, cache, dependencies hay dữ liệu local/production.
+4. Dựng artifact **trong checkout preview**. Kiểm tra manifest nguồn và manifest trong artifact cùng trỏ tới Site preview, khác Site production. Không tái sử dụng `dist` được dựng với manifest production.
+5. Theo workflow Sites, push đúng source, lưu phiên bản từ cùng commit/artifact rồi triển khai với quyền riêng tư hiện tại. Không lưu token vào file, Git hay log.
+6. Chờ deployment thành công có URL; ghi lại phiên bản/commit và kết quả kiểm tra thực tế. Link cố định phía trên tiếp tục mở bản mới. Nếu phát hành thất bại, giữ bản đang chạy và báo lỗi.
+
+Không thay quyền xem/chơi hoặc triển khai Site production trong quy trình này. Nếu đổi định dạng phòng, người chơi tạo phòng mới sau khi cập nhật. Mở lại trang hoặc dùng Ctrl+Shift+R nếu tab cũ vẫn đang chạy bản trước.
+
+## Lần triển khai đầu tiên — 2026-10-18
+
+- Bản game: 0.4; source GitHub `5babda9c9c7fa525f76d63fe8f129486211db9c4` (gameplay tiếp tục từ `e2169261257f904727bb115707f85ff2fc0fe172`).
+- Source của Site preview: `a5b6e9052dc89968ac4d4987923f3cb08c51aa91`.
+- Saved version: `appgprj_6ad441f7c1108191b3bb10887f2bbebc~appgver_91cd6035b2988191a67ac6ceeb670b1e`.
+- Deployment: `appgdep_6ad442aae59c8191a453e5c47d9ceeae`; Sites trả `succeeded` cùng URL lúc `2026-10-18T03:53:34Z`.
+- Chạy lại trong checkout preview: `npm test` **33/33**, `npm run typecheck` và `npm run build` đều exit 0. Build vẫn cảnh báo chunk >500 kB và phân loại route Vinext như đã ghi trong `VALIDATION.md`.
+- Manifest trong artifact đã được so khớp với manifest source preview; artifact chứa `dist/server/index.js`, client assets và migration D1. Các helper đóng gói của plugin không có trên executor này nên dùng build integration sẵn có và đóng gói tar theo layout mà Sites chấp nhận. Lần upload đầu sai layout bị từ chối trước triển khai; gói đã sửa giữ đường dẫn `dist/server/` và được triển khai thành công.
+- Site preview riêng tư, chỉ chủ Site có quyền ban đầu. Không thêm người xem hoặc đổi audience.
+- Đọc lại Site production xác nhận vẫn version **3**, URL và revision quyền **2** không đổi. Không triển khai production.
+- Chưa chạy lại browser trên URL hosted trong tác vụ cấu hình preview. Kết quả browser local của bản 0.4 nằm trong `VALIDATION.md`; trạng thái deployment thành công không chứng minh FPS/chất lượng chơi hay tám thiết bị ổn định.
+
+## Cập nhật hình ảnh 0.5 — 2026-10-18
+
+- Source GitHub: `6f3c7e9c9c6aa1e1cc04335b83b62f0a90a09ad2`.
+- Source của Site preview: `2f215e611c8e7c12d8f8efe24c6b093a4239ac70`; cùng Site/URL, giữ quyền riêng tư của chủ Site và binding D1 `DB`.
+- Saved version: `appgprj_6ad441f7c1108191b3bb10887f2bbebc~appgver_994c92969e348191b25b2c50faa90700`.
+- Deployment: `appgdep_6ad450fd59bc819188accc19875b2895`; Sites trả **succeeded** cùng URL lúc `2026-10-18T04:54:36.955476Z`.
+- Dựng lại trong checkout preview với manifest riêng: test **33/33**, TypeScript và build exit0. Kiểm tra manifest nguồn/artifact khớp Site preview, file texture trong artifact có SHA256 khớp source; archive 1270420 bytes chứa Worker, client và migrations, không chứa source secrets/dependencies/runtime DB.
+- Các browser check chạy trên artifact local hoàn chỉnh đều qua: hình ảnh cao/thấp/mưa/dụng cụ, một chuyến bàn giao solo, hai phiên cùng phòng/offline/reconnect và một ca autumn thắng (score51, một khu sạch), kết quả/restart/menu. Điều kiện đo, kết quả lỗi trung gian đã sửa và các giới hạn nằm trong `VISUAL-PREVIEW-0.5.md`.
+- Không chạy browser đã đăng nhập trên URL hosted trong tác vụ này. Native deployment thành công xác nhận bản đã xuất bản, không chứng minh chất lượng hình ảnh ngang clip hoặc FPS máy thật. Không thay audience hoặc cập nhật Site production cũ.
+
+## Camera và nhân vật 0.6 — 18/10/2026
+
+- Source GitHub: `b2a6c6899e187e389da9eeb9d7e0fe09e9ae317e`, game `0.6.0-preview.1`.
+- Source Site preview: `4d8266c6d26b1f20130370c1abefabccd65957bb`; Site/URL cũ, binding D1 `DB` và quyền riêng tư của chủ Site giữ nguyên (revision 1, không có external visitors).
+- Saved version **3**: `appgprj_6ad441f7c1108191b3bb10887f2bbebc~appgver_f7ddd0ac5798819196fa36878e37c93d`.
+- Deployment: `appgdep_6ad4990121f081919057dd33edf9d2af`; Sites trả **succeeded** cùng URL lúc `2026-10-18T10:01:53.196425+00:00` (**17:01:53, giờ Việt Nam**).
+- Dựng lại trong checkout preview: `npm test` **35/35**, TypeScript và build exit0. Manifest nguồn/artifact đúng preview, atlas texture khớp source; archive 1277770 bytes/97 entries, SHA256 `bdc123bf015109e7ec40d9c2e252fb337f5335140a1ddce6872120679d9a2a14`. Worker/client/migrations đi cùng một source đã push, không kèm secrets/dependencies/runtime DB.
+- Browser trên artifact local cuối: third-person (V/giữ V, C/dụng cụ, settings cũ, lưu qua reload, cao/thấp/mưa), solo-trip bàn giao3 đơn vị, full-shift thắng mùa thu (score24.132, một khu sạch), co-op hai context dùng hai camera khác nhau và offline/reconnect đều qua. Không có runtime/console errors ngoài ba lỗi mạng offline dự kiến ở co-op. Điều kiện và giới hạn nằm ở `THIRD-PERSON-0.6.md`.
+- Không chạy browser đã đăng nhập trên URL hosted. Native success xác nhận publication. Đọc lại Site production: vẫn version 3, access revision 2, updated_at `2026-10-15T08:36:23.697175+00:00` và URL cũ; không triển khai hoặc đổi audience của production.
+
+
+## Góc phố 0.7 — 20/10/2026 (Asia/Saigon)
+
+- Source GitHub: `87458e903ce6477f90047479282b41c48982d4bd`, game `0.7.0-preview.1`.
+- Source Site preview: `19d0c80c8f3abed70caaa875c9cf0eda19f4232e`; Site/URL cũ, binding D1 `DB`, quyền owner-private revision 1 và không có external visitors giữ nguyên.
+- Saved version **4**: `appgprj_6ad441f7c1108191b3bb10887f2bbebc~appgver_15980b26f1dc819193c9884f2ebcc089`. Native version metadata xác nhận đúng source SHA ở trên.
+- Deployment: `appgdep_6ad6590d4cbc8191a65b69ce28ab13ca`; Sites trả **succeeded** cùng URL lúc `2026-10-19T17:53:34.619351+00:00` (**00:53:34 ngày 20/10, giờ Việt Nam**).
+- Dựng lại trong checkout preview riêng: `npm test` **46/46**, TypeScript/build exit0. Manifest nguồn/artifact đúng Site preview, texture khớp source. Gói upload gzip 1.298.695 bytes/97 entries, SHA256 `ffd85395ce0ec13762f2b15d55f90ebdc0543ba7b7b1546d3c42f9729dbe7889`; không kèm secrets/dependencies/runtime DB. Giữ cảnh báo chunk >500 kB và phân loại route Vinext đã ghi trong báo cáo.
+- Browser local: camera/pitch/ping3D, settings/reload/cao/thấp/mưa, chuyến solo bàn giao 4 đơn vị, ca autumn/shift thắng score 42,665/một khu sạch, co-op hai camera/bảo toàn rác/nhả xe/offline/reconnect và network fault/rejoin/jitter/host expiry đều qua. Co-op thường 93 responses đều 200, ba lỗi offline cố ý, runtime errors rỗng. Network nâng cao có 17 lỗi mạng/403 chủ động, không runtime errors khác; nhiều packet stale trên SwiftShader nên không suy ra độ mượt hay latency máy thật. Chi tiết ở `POLISH-0.7.md`.
+- Cảm ứng emulator 390×844 qua đổi góc/di chuyển, 11 nút trong viewport và không còn toast khóa chuột; chưa thử điện thoại thật. Một số hướng dẫn vẫn dùng tên phím.
+- Đã thử HTTP smoke không tạo phòng trên URL hosted; kết nối bị **session proxy chặn CONNECT 403** trước khi tới Site. Vì vậy chưa xác minh HTML/assets/API hoặc browser đã đăng nhập trên URL hosted từ executor này. Không đổi proxy, audience hoặc tuyến truy cập để vượt chặn. Native success/version metadata xác nhận publication, không phải bằng chứng trải nghiệm chơi.
+- Đọc lại Site production: vẫn version 3, access revision 2, updated_at `2026-10-15T08:36:23.697175+00:00` và URL cũ. Không triển khai production hoặc đổi audience của cả hai Site.

@@ -3,8 +3,8 @@
 Read `README.md`, `docs/HANDOFF.md`, and `docs/ROADMAP-0.4.md` first.
 
 ## Product
-- Existing 0.3 first-person 3D sanitation worker co-op prototype inspired by Hanoi.
-- Preserve first-person view, broom/scoop, crouching, cart transport, flood/drain work, solo and 1–8-player rooms.
+- Existing 0.7 polish preview over the 0.6 third-person camera, 0.5 Hanoi night street and 0.4 co-op gameplay. Read `docs/POLISH-0.7.md`, `docs/THIRD-PERSON-0.6.md` and `docs/VISUAL-PREVIEW-0.5.md` for changes and verification limits.
+- Third-person is the authorized default; V switches to the retained first-person view. Preserve both modes, broom/scoop, crouching, cart transport, flood/drain work, solo and 1–8-player rooms. Camera/worker animation is cosmetic: task reach and rules stay in lib/game.ts.
 - Develop the current game; do not replace it with a new template, 2D game, Telegram game, or concept image.
 - UI language: Vietnamese. Desktop keyboard and mouse are the main target; preserve available touch controls.
 
@@ -20,8 +20,15 @@ Read `README.md`, `docs/HANDOFF.md`, and `docs/ROADMAP-0.4.md` first.
 ## Working rules
 - Put authoritative simulation in `lib/game.ts`, 3D rendering in `lib/scene3d.ts`, inputs/HUD in `app/game-client.tsx`, validated room actions in `app/api/game/route.ts`.
 - Keep client/server mechanics consistent; preserve capacity limits, cart ownership, sequence replay protection and atomic room writes.
+- Optional input history is bounded to one second/32 frames, trusted server elapsed and 50 ms substeps. Preserve legacy input support, no outage catch-up, and ACK-based rejoin sequence. Shared static prop footprints live in `lib/street-colliders.ts`; keep scene placement in agreement.
 - For incompatible serialized state changes, version the game format and show a clear message for old rooms.
 - Add focused behavior tests for changed mechanics; keep full scripted shift and 8-player concurrency coverage.
 - Report actual commands and results. Separate automated checks, HTTP smoke checks, browser checks and real multiplayer playtests. Never claim graphics quality, FPS, enjoyment or eight-device stability from unit tests.
 - Keep credentials, `.env*`, `.wrangler`, `.sites-runtime`, dependencies and built output out of Git.
 - `.openai/hosting.json` retains the existing Site identity for handoff. Changing GitHub code does not itself update the live demo. No production deployment or audience change is part of the migration task.
+
+## Persistent playtest preview
+- The owner authorized a separate preview and updates after completed changes. Follow `docs/PREVIEW.md` and the Sites workflow to update the same preview Site after the relevant checks pass.
+- `.openai/preview.json` identifies the preview. Keep `.openai/hosting.json` pointed at the original production Site; build/publish preview from a separate checkout with the preview identity in its manifest.
+- Preserve both audiences and keep room databases separate. Never deploy the original production Site without a separate user request.
+- Pushes to GitHub alone do not deploy preview; finish the explicit Sites publication and report its actual outcome.
