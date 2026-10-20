@@ -237,12 +237,21 @@ class Builder:
             self.u.log_warning("[HanoiBootstrap] " + message)
             return None
 
+    def world_settings(self):
+        # Use reflected GameplayStatics, rather than a native UWorld method
+        # that may not be exported to Python in a particular editor build.
+        getter = getattr(self.u.GameplayStatics, "get_world_settings", None)
+        if getter is not None:
+            return getter(self.world)
+        return self.u.GameplayStatics.get_actor_of_class(self.world, self.u.WorldSettings)
+
     def preflight(self):
         u = self.u
         required = ("EditorAssetLibrary", "EditorLoadingAndSavingUtils", "LevelEditorSubsystem",
                     "EditorActorSubsystem", "UnrealEditorSubsystem", "MaterialEditingLibrary", "MaterialFactoryNew",
                     "MaterialInstanceConstantFactoryNew", "StaticMeshActor", "TextRenderActor",
-                    "PlayerStart", "SkyAtmosphere", "SkyLight", "DirectionalLight", "SpotLight")
+                    "PlayerStart", "SkyAtmosphere", "SkyLight", "DirectionalLight", "SpotLight",
+                    "GameplayStatics", "WorldSettings")
         missing = [name for name in required if not hasattr(u, name)]
         if missing:
             raise BootstrapError("Missing UE APIs: %s. Enable Python Editor Script Plugin and "
@@ -251,7 +260,7 @@ class Builder:
         self.editor = u.get_editor_subsystem(u.EditorActorSubsystem)
         self.editor_worlds = u.get_editor_subsystem(u.UnrealEditorSubsystem)
         self.world = self.editor_worlds.get_editor_world()
-        if not self.world or self.world.get_world_settings() is None:
+        if not self.world or self.world_settings() is None:
             raise BootstrapError("Open the Third Person map before running this file.")
         if self.editor_worlds.get_game_world() is not None:
             raise BootstrapError("Stop Play/Simulate before running this file.")
@@ -306,7 +315,7 @@ class Builder:
         if not self.levels.new_level(self.map_path):
             raise BootstrapError("Level creation failed: " + self.map_path)
         self.world = self.editor_worlds.get_editor_world()
-        self.world.get_world_settings().set_editor_property("default_game_mode", self.game_mode)
+        self.world_settings().set_editor_property("default_game_mode", self.game_mode)
 
     def make_materials(self):
         u = self.u
