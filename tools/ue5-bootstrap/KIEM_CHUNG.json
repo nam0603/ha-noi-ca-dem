@@ -1,0 +1,15 @@
+{
+  "python": "3.12.14",
+  "scope": "syntax and pure scene data only",
+  "unreal_editor_executed": false,
+  "target_engine_reported_by_user": "5.8.4",
+  "generated_nodes": 506,
+  "facade_bodies": 8,
+  "static_leaves": 72,
+  "spot_lights": 4,
+  "shadowed_spots": 2,
+  "central_lane_checks": 281,
+  "player_start_clear": true,
+  "deterministic": true,
+  "renderer_gameplay_packaging_gpu_fps_verified": false
+}
