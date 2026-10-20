@@ -1,8 +1,14 @@
-# Hà Nội · Ca đêm — UE5 scene bootstrap 0.1
+# Hà Nội · Ca đêm — UE5 scene bootstrap 0.1.1
 
 Gói này tự dựng một **blockout phố đêm để đi thử bằng nhân vật Third Person** trong project UE5 hiện có. Bản UE người dùng báo là **5.8.4**; tác giả chưa có Unreal Editor để chạy xác nhận API hoặc hình ảnh trên bản này. Script kiểm tra những API/asset thiết yếu trước khi tạo map và ghi phiên bản engine thực tế vào report.
 
 Nếu tải nhánh repository bằng **Code → Download ZIP**, file cần chạy nằm trong **`tools/ue5-bootstrap/dung_pho_hanoi.py`** sau khi giải nén.
+
+## Sửa lỗi `Cannot assign tint parameter: road` (0.1.1)
+
+Lỗi được ghi nhận trên máy người dùng khi bản 0.1.0 gán `Tint` cho material instance đầu tiên. Chưa xác nhận nguyên nhân bên trong Unreal. Bản 0.1.1 bỏ phụ thuộc vào việc tìm parameter của material cha vừa tạo: tạo 22 material có đầu vào constant cho màu, roughness, metallic và emissive. Tất cả kết nối vẫn được kiểm tra; không bỏ qua lỗi để báo hoàn thành. Cách này phù hợp cảnh tĩnh, nhưng tạo nhiều material cha hơn và có thể tăng thời gian compile shader so với dùng instance chung.
+
+Sau lỗi ở bản cũ: đóng thông báo bằng **OK**, chọn **File → Save All**, tải/giải nén ZIP mới rồi chạy đúng file `dung_pho_hanoi.py` mới. Log bắt đầu phải có **`Starting bootstrap 0.1.1`**. Script tạo thư mục số kế tiếp, không yêu cầu xóa bản dựng dở. Không cần cài lại Unreal hoặc plugin. Bản sửa chưa được chạy trong Unreal tại môi trường tác giả; cần xác nhận lại trên PC.
 
 ## Cách chạy trên PC của bạn
 
@@ -27,7 +33,7 @@ exec(compile(open(r"D:\HanoiNightBootstrap\dung_pho_hanoi.py", encoding="utf-8")
 - Tám mặt tiền, ban công, cửa sổ, mái hiên, biển tên; một góc cà phê nhỏ.
 - Bốn đèn đường, hai đèn đường có shadow, ánh trăng, sky/fog/exposure khi API hỗ trợ.
 - Xe rác trang trí, ô tập kết và 72 chiếc lá trang trí trong tám nhóm.
-- Vật liệu màu/roughness/emissive tự tạo bằng một material cha và các instance, không tải asset ngoài.
+- 22 vật liệu màu/roughness/metallic/emissive với đầu vào constant, không dùng parameter override hoặc tải asset ngoài.
 - GameMode trỏ tới Third Person GameMode sẵn có có Character pawn. Không sửa Blueprint template.
 
 Các actor được phân nhóm trong Outliner dưới `HanoiBootstrap`. Biển 3D dùng chữ ASCII để không phụ thuộc bộ glyph tiếng Việt của font distance-field mặc định. Đây là cảnh hình khối/vật liệu cơ bản; chưa phải bộ art chi tiết hoặc chất lượng ngang clip tham chiếu.
@@ -65,7 +71,8 @@ Python Editor chỉ dựng nội dung. Vòng quét–hốt–đổ cần bước
 
 ## Kiểm chứng đã làm
 
-- `python -m py_compile dung_pho_hanoi.py kiem_tra_bo_tri.py`: qua.
+- `python -m py_compile tools/ue5-bootstrap/dung_pho_hanoi.py tools/ue5-bootstrap/kiem_tra_bo_tri.py tools/ue5-bootstrap/test_materials.py`: qua, chạy từ thư mục repository.
+- `python -m unittest discover -s tools/ue5-bootstrap -p 'test_*.py' -v`: kiểm tra adapter vật liệu với editor giả lập: đủ đầu vào cho palette, giá trị đường/cửa sổ phát sáng, lỗi tạo asset/node/kết nối phải dừng. **Không xác minh API, compiler shader hoặc rendering trong UE.**
 - `python kiem_tra_bo_tri.py`: kiểm tra dữ liệu cảnh, kích thước hữu hạn/dương, material hợp lệ, nhãn duy nhất, bố trí lặp lại ổn định, vị trí bắt đầu và đường đi giữa phố không bị khối collidable che.
 - Kết quả thực tế ở `KIEM_CHUNG.json`: 506 node, tám thân mặt tiền, 72 lá, bốn spot light/hai có shadow và 281 điểm kiểm tra dọc đường.
 - **Chưa chạy Unreal Editor, chưa xác minh API 5.8.4, rendering, Play, packaging hoặc FPS.** Không dùng số kiểm tra hình học để kết luận cảnh đẹp/mượt hoặc gameplay đã hoạt động.

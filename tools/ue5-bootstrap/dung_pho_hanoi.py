@@ -12,7 +12,7 @@ import re
 import traceback
 from pathlib import Path
 
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 PREFIX = "/Game/HanoiNightShiftAuto"
 MESH_PATHS = {
     "cube": "/Engine/BasicShapes/Cube.Cube",
@@ -249,7 +249,8 @@ class Builder:
         u = self.u
         required = ("EditorAssetLibrary", "EditorLoadingAndSavingUtils", "LevelEditorSubsystem",
                     "EditorActorSubsystem", "UnrealEditorSubsystem", "MaterialEditingLibrary", "MaterialFactoryNew",
-                    "MaterialInstanceConstantFactoryNew", "StaticMeshActor", "TextRenderActor",
+                    "MaterialExpressionConstant3Vector", "MaterialExpressionConstant",
+                    "StaticMeshActor", "TextRenderActor",
                     "PlayerStart", "SkyAtmosphere", "SkyLight", "DirectionalLight", "SpotLight",
                     "GameplayStatics", "WorldSettings")
         missing = [name for name in required if not hasattr(u, name)]
@@ -318,45 +319,42 @@ class Builder:
         self.world_settings().set_editor_property("default_game_mode", self.game_mode)
 
     def make_materials(self):
+        """Build fixed palette graphs without material-instance parameter discovery.
+
+        The user's editor rejected the first Tint override in 0.1.0. This static
+        blockout needs no runtime parameter changes, so use explicit constant
+        inputs instead of relying on a newly created parent's parameter cache.
+        Every graph connection remains required; failures must stop generation.
+        """
         u = self.u
         tools = u.AssetToolsHelpers.get_asset_tools()
         folder = self.root + "/Materials"
-        material = tools.create_asset("M_HanoiSurface", folder, u.Material, u.MaterialFactoryNew())
-        if material is None:
-            raise BootstrapError("Could not create base material.")
         lib = u.MaterialEditingLibrary
-        tint = lib.create_material_expression(material, u.MaterialExpressionVectorParameter, -650, -160)
-        tint.set_editor_property("parameter_name", "Tint")
-        tint.set_editor_property("default_value", u.LinearColor(0.3, 0.3, 0.3, 1))
-        for name, value, prop, y in (("Roughness", 0.8, u.MaterialProperty.MP_ROUGHNESS, 50),
-                                     ("Metallic", 0.0, u.MaterialProperty.MP_METALLIC, 180)):
-            expr = lib.create_material_expression(material, u.MaterialExpressionScalarParameter, -650, y)
-            expr.set_editor_property("parameter_name", name)
-            expr.set_editor_property("default_value", value)
-            if not lib.connect_material_property(expr, "", prop):
-                raise BootstrapError("Cannot connect material property: " + name)
-        glow = lib.create_material_expression(material, u.MaterialExpressionScalarParameter, -650, 320)
-        glow.set_editor_property("parameter_name", "Glow")
-        glow.set_editor_property("default_value", 0.0)
-        multiply = lib.create_material_expression(material, u.MaterialExpressionMultiply, -300, 300)
-        if not (lib.connect_material_property(tint, "", u.MaterialProperty.MP_BASE_COLOR)
-                and lib.connect_material_expressions(tint, "", multiply, "A")
-                and lib.connect_material_expressions(glow, "", multiply, "B")
-                and lib.connect_material_property(multiply, "", u.MaterialProperty.MP_EMISSIVE_COLOR)):
-            raise BootstrapError("Cannot connect surface/emissive nodes.")
-        lib.recompile_material(material)
+        self.report.update(material_strategy="constant_graph_per_palette", material_count=0)
         for key, (color, roughness, metallic, emission) in PALETTE.items():
-            instance = tools.create_asset("MI_" + key, folder, u.MaterialInstanceConstant,
-                                          u.MaterialInstanceConstantFactoryNew())
-            if instance is None:
-                raise BootstrapError("Cannot create material instance: " + key)
-            lib.set_material_instance_parent(instance, material)
-            if not lib.set_material_instance_vector_parameter_value(instance, "Tint", u.LinearColor(*color, 1.0)):
-                raise BootstrapError("Cannot assign tint parameter: " + key)
-            for param, value in (("Roughness", roughness), ("Metallic", metallic), ("Glow", emission)):
-                if not lib.set_material_instance_scalar_parameter_value(instance, param, value):
-                    raise BootstrapError("Cannot assign material parameter: " + key + "/" + param)
-            self.materials[key] = instance
+            material = tools.create_asset("M_" + key, folder, u.Material, u.MaterialFactoryNew())
+            if material is None:
+                raise BootstrapError("Cannot create material: " + key)
+            inputs = (
+                ("BaseColor", u.MaterialProperty.MP_BASE_COLOR, color),
+                ("Roughness", u.MaterialProperty.MP_ROUGHNESS, roughness),
+                ("Metallic", u.MaterialProperty.MP_METALLIC, metallic),
+                ("Emissive", u.MaterialProperty.MP_EMISSIVE_COLOR,
+                 tuple(channel * emission for channel in color)),
+            )
+            for index, (name, prop, value) in enumerate(inputs):
+                vector = isinstance(value, tuple)
+                cls = u.MaterialExpressionConstant3Vector if vector else u.MaterialExpressionConstant
+                expr = lib.create_material_expression(material, cls, -400, index * 140)
+                if expr is None:
+                    raise BootstrapError("Cannot create material input: " + key + "/" + name)
+                expr.set_editor_property("constant" if vector else "r",
+                                         u.LinearColor(*value, 1.0) if vector else float(value))
+                if not lib.connect_material_property(expr, "", prop):
+                    raise BootstrapError("Cannot connect material input: " + key + "/" + name)
+            lib.recompile_material(material)
+            self.materials[key] = material
+            self.report["material_count"] = len(self.materials)
 
     def spawn(self, cls, label, pos, rot=(0, 0, 0), group="Environment"):
         u = self.u
@@ -456,6 +454,7 @@ class Builder:
 
     def run(self):
         u = self.u
+        u.log("[HanoiBootstrap] Starting bootstrap " + VERSION)
         try:
             self.preflight()
             plan = make_scene_plan()
